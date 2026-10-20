@@ -13,6 +13,8 @@
   const { SQ, GROUPS } = Board;
 
   const R = Math.random;
+  // knobs for strength experiments (tools/sim.js); the shipped values are the defaults
+  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10 };
   const A = (action, why) => ({ action, why: why || '' });
 
   function unowned(st) { return st.own.filter((o, i) => SQ[i].group && o.owner < 0).length; }
@@ -168,7 +170,7 @@
       }
       // management
       if (level !== 'easy') {
-        const reserve = level === 'hard' ? cushion(st, me) : 300;
+        const reserve = level === 'hard' ? cushion(st, me) * cfg.reserve : 300;
         const builds = Money.houseOptions(st, me, 'stay').filter(o => o.afford && leg.some(a => a.type === 'build' && a.sq === o.sq));
         if (level === 'hard') {
           // best payback first, prefer getting every set to 3 houses
@@ -177,7 +179,7 @@
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, `Build on ${SQ[pick.sq].name}: pays back in ${Math.max(1, Math.round(pick.payback))} rounds.`);
           const um = leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
           if (um) return A({ ...um, seat: me }, 'Spare cash: pay off a mortgage.');
-          if (ph === 'end' && has('propose') && (st.proposals || 0) < 1) {
+          if (cfg.trade && ph === 'end' && has('propose') && (st.proposals || 0) < 1) {
             const tr = findTrade(st, me);
             if (tr) return A({ type: 'propose', seat: me, trade: tr }, `Offer a trade for ${SQ[tr.get[0]].name} to finish a set.`);
           }
@@ -203,6 +205,6 @@
     try { return choose(st, me); } finally { st.players[me].level = saved; }
   }
 
-  const AI = { choose, hint, lotValue, cushion, findTrade };
+  const AI = { choose, hint, lotValue, cushion, findTrade, cfg };
   if (node) module.exports = AI; else root.AI = AI;
 })(this);

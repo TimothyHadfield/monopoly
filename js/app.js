@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.0 · 2026-10-19';
+  const VERSION = 'v1.1 · 2026-10-19';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -57,12 +57,15 @@
     land: 'Exact long-run odds from a Markov chain of the real rules: doubles, three doubles to jail, every Chance and Chest card. Jail is the most visited square because so many things send you there, which is why the oranges and reds just past it get landed on most.',
     jail: 'Early on, paying $50 to leave jail is better (you want to buy). Late in the game, staying in jail is safer (the board is full of houses). The choice changes the odds a little.',
     rent: 'What one opponent pays you per turn on average: chance they land there on a turn times the rent. Multiply by the number of opponents for one full round.',
+    from: 'Tap any square: the board shows the chance (in %) of each square being landed on during one turn starting there, counting doubles, cards and the jail rules. Numbers can add to over 100% because doubles give extra throws.',
     payback: 'How many opponent turns until the rent repays what you paid for the lots and houses. Lower is better. With 3 opponents, divide by 3 for rounds.',
     danger: 'Expected money this player pays out on their next turn (rent to others plus taxes), counting every roll, double and card. The biggest single risk is shown underneath.',
     income: 'Expected rent this player collects in one full round (every opponent takes one turn), from what they own right now.',
     best: 'Legal next buildings (full set, building evenly, bank has the piece), ranked by how fast the extra rent pays for the house.',
     value: 'Value = cash change + change in what your lots sell back for + 10 rounds of change in income once your full sets have 3 houses each (the sweet spot). The meter compares both sides.',
     strength: 'Measured by playing thousands of full 4-player games between computer levels with seats rotated (see How strong). Hard uses the landing odds, house payback and danger ahead to decide.',
+    worth: 'The printed price, raised if it finishes one of your sets (×2.2) or blocks a set for someone else (×1.6), and nudged by how often it gets landed on. Bidding above this usually loses money.',
+    online: 'One person creates a room and shares the 5-letter code; friends tap Join on their own phone or laptop. Computers run in the browser of whoever made the room. If someone leaves, a computer takes the seat. Free, no sign-up.',
     coach: 'After each of your choices in a game, shows what the hard computer would have done instead, if it differs.',
   };
   function toast(msg, ms) {
@@ -160,6 +163,14 @@
       const st = stat();
       const m = S.odds.metric;
       let heat, values, heatFn = null;
+      if (m === 'from') {
+        // one turn from the selected square: chance of ending a throw on each square
+        const L = Markov.turnFrom(S.odds.sel, { strategy: S.settings.jail });
+        const mx = Math.max(...L.all);
+        heat = Array.from(L.all, v => (v > 0 ? 0.15 + 0.85 * v / mx : null));
+        values = Array.from(L.all, v => (v >= 0.005 ? Math.round(v * 100) + '' : ''));
+        return { heat, values, heatFn: null, selected: S.odds.sel, tokens: [{ id: 'src', pos: S.odds.sel, color: '#6ea8fe', jail: false, jump: true }] };
+      }
       if (m === 'land') {
         // scale over the squares you can own or must pay on, so cards/jail don't flatten the colours
         const pool = st.land.filter((v, i) => SQ[i].group || SQ[i].type === 'tax');
@@ -185,6 +196,15 @@
     },
     center() {
       const i = S.odds.sel, s = SQ[i], st = stat();
+      if (S.odds.metric === 'from') {
+        const L = Markov.turnFrom(i, { strategy: S.settings.jail });
+        const top = Array.from(L.all, (v, k) => k).sort((a, b) => L.all[b] - L.all[a]).slice(0, 3);
+        const paid = Array.from(L.all).reduce((a, b) => a + b, 0);
+        return `<div class="cap">One turn from</div><div class="ctitle">${esc(s.name)}</div>
+          <div class="big">${esc(SQ[top[0]].short)} ${Math.round(L.all[top[0]] * 100)}%</div>
+          <div class="csub">then ${top.slice(1).map(k => esc(SQ[k].short) + ' ' + Math.round(L.all[k] * 100) + '%').join(' · ')}</div>
+          <div class="csub">${paid.toFixed(2)} throws this turn on average</div>`;
+      }
       const rank = st.land.map((v, k) => k).sort((a, b) => st.land[b] - st.land[a]).indexOf(i) + 1;
       const band = s.group ? `<div class="chip-band" style="background:${GROUP_COLOR[s.group]}"></div>` : '';
       let extra = '';
@@ -197,7 +217,7 @@
     panel() {
       const m = S.odds.metric, j = S.settings.jail;
       const seg = (k, v, l) => `<button data-act="${k}" data-v="${v}" aria-pressed="${(k === 'metric' ? m : j) === v}">${l}</button>`;
-      let h = `<div class="ph"><div class="seg">${seg('metric', 'land', 'Landing %')}${seg('metric', 'rent', 'Rent/turn')}${seg('metric', 'payback', 'Payback')}</div>${help(m === 'land' ? 'land' : m === 'rent' ? 'rent' : 'payback')}</div>
+      let h = `<div class="ph"><div class="seg">${seg('metric', 'land', 'Landing')}${seg('metric', 'rent', 'Rent')}${seg('metric', 'payback', 'Payback')}${seg('metric', 'from', 'From here')}</div>${help(m)}</div>
         <div class="ph"><span class="sub" style="color:var(--muted);font-size:13px">Jail:</span><div class="seg">${seg('jail', 'pay', 'Leave fast')}${seg('jail', 'stay', 'Stay in')}</div>${help('jail')}</div>`;
       // selected lot: rent ladder
       const i = S.odds.sel, s = SQ[i];
@@ -466,17 +486,110 @@
   // ================================================================ PLAY
   let G = null; // engine state (S.game)
   let gen = 0, timer = null, lastDiceKey = '';
-  const humanSeat = st => { const a = Engine.actor(st); return a >= 0 && st.players[a].kind === 'human' ? a : -1; };
+  const humanSeat = st => {
+    const a = Engine.actor(st);
+    if (NETS) return a >= 0 && a === NETS.mySeat ? a : -1;
+    return a >= 0 && st.players[a].kind === 'human' ? a : -1;
+  };
+  // ---------------------------------------------------------------- online room (shared online.js)
+  let NET = null, NETS = null, netMod = null, netBusy = false;
+  const NET_FLAG = 'monopoly:online';
+  function netLoad() {
+    if (netMod) return Promise.resolve(netMod);
+    return import(new URL('js/online.js', location.href).href).then(m => (netMod = m));
+  }
+  function netAttach(m) {
+    if (NET) return NET;
+    NET = m.createOnline({ game: MonoGame, gameId: 'monopoly', botDelayMs: 900 });
+    NET.on('change', snap => {
+      const st = snap && snap.status;
+      if (st === 'closed' || st === 'left') { netDrop(st === 'closed' ? 'The room was closed.' : ''); return; }
+      if (st === 'lobby' || st === 'playing' || st === 'finished') NETS = snap;
+      else if (st !== 'joining') NETS = null;
+      if (NETS && NETS.pub) track(NETS.pub, 'net:' + NETS.code);
+      render();
+    });
+    NET.on('error', msg => toast(esc(msg), 5000));
+    return NET;
+  }
+  function netDrop(msg) {
+    NET = null; NETS = null; S.hist = null;
+    try { localStorage.removeItem(NET_FLAG); } catch (e) { /* ignore */ }
+    if (msg) toast(esc(msg));
+    render();
+  }
+  async function netRun(fn) {
+    if (netBusy) return;
+    netBusy = true; render();
+    try {
+      const m = await netLoad();
+      netAttach(m);
+      const r = await fn(NET);
+      if (r && r.ok === false) toast(esc(r.message || 'That did not work.'), 5000);
+      else { try { localStorage.setItem(NET_FLAG, '1'); } catch (e) { /* ignore */ } }
+      return r;
+    } catch (e) { toast('Online play could not load. Check the connection.', 5000); }
+    finally { netBusy = false; render(); }
+  }
   const delay = () => ({ fast: 140, normal: 520, slow: 1000 }[S.settings.speed] || 520);
-  function setGame(st) { G = st; S.game = st; save(); }
+  function setGame(st) {
+    G = st; S.game = st;
+    if (!st) S.hist = null; else track(st, st.startId);
+    save();
+  }
+  // net worth once per round, for the after-game chart
+  function track(st, id) {
+    {
+      if (!S.hist || S.hist.id !== id) S.hist = { id, rows: [] };
+      const rows = S.hist.rows;
+      if (!rows.length || rows[rows.length - 1].r !== st.round || st.phase === 'over') {
+        const w = st.players.map((p, k) => (p.out ? 0 : Math.round(Money.netWorth(st, k))));
+        if (rows.length && rows[rows.length - 1].r === st.round) rows[rows.length - 1].w = w; else rows.push({ r: st.round, w });
+      }
+    }
+  }
+  // simple line chart of net worth by round (one line per player, labelled at the end)
+  function worthChart(hist, st) {
+    if (!hist || hist.rows.length < 2) return '';
+    const rows = hist.rows, W = 400, H = 170, L = 44, R = 70, T = 10, B = 22;
+    const maxW = Math.max(100, ...rows.map(x => Math.max(...x.w)));
+    const r0 = rows[0].r, r1 = rows[rows.length - 1].r || 1;
+    const X = r => L + (W - L - R) * (r - r0) / Math.max(1, r1 - r0), Y = v => T + (H - T - B) * (1 - v / maxW);
+    let g = `<line x1="${L}" y1="${Y(0)}" x2="${W - R}" y2="${Y(0)}" stroke="#2a3042"/>`;
+    [0.5, 1].forEach(f => { g += `<line x1="${L}" y1="${Y(maxW * f)}" x2="${W - R}" y2="${Y(maxW * f)}" stroke="#2a3042" stroke-dasharray="3 4"/><text x="${L - 6}" y="${Y(maxW * f) + 4}" text-anchor="end" font-size="11" fill="#969db4">${money(maxW * f)}</text>`; });
+    g += `<text x="${L}" y="${H - 4}" font-size="11" fill="#969db4">round ${r0}</text><text x="${W - R}" y="${H - 4}" font-size="11" fill="#969db4" text-anchor="end">${r1}</text>`;
+    const ends = [];
+    st.players.forEach((p, k) => {
+      const pts = rows.map(x => `${X(x.r).toFixed(1)},${Y(x.w[k] || 0).toFixed(1)}`).join(' ');
+      g += `<polyline points="${pts}" fill="none" stroke="${COLORS[k]}" stroke-width="2" stroke-linejoin="round"/>`;
+      ends.push({ k, y: Y(rows[rows.length - 1].w[k] || 0) });
+    });
+    ends.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 13) ends[i].y = ends[i - 1].y + 13;
+    // keep the labels inside the chart: push the bottom ones back up
+    const floor = H - B + 4;
+    for (let i = ends.length - 1; i >= 0; i--) {
+      const lim = i === ends.length - 1 ? floor : ends[i + 1].y - 13;
+      if (ends[i].y > lim) ends[i].y = lim;
+    }
+    ends.forEach(e => { g += `<text x="${W - R + 6}" y="${e.y + 4}" font-size="12" fill="#e8eaf0">${esc(st.players[e.k].name.slice(0, 9))}</text>`; });
+    return `<div class="sec">Net worth by round</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Net worth by round">${g}</svg>`;
+  }
   function doAction(action, fromHuman) {
     if (!G) return;
     let before = null;
     if (fromHuman && S.settings.coach && ['buy', 'decline', 'bid', 'pass', 'payJail', 'useCard', 'accept', 'reject'].includes(action.type)) {
       try { before = AI.hint(G, action.seat); } catch (e) { before = null; }
     }
-    try { setGame(Engine.apply(G, action)); }
-    catch (e) { toast(esc(e.message)); return; }
+    if (NETS) {
+      // online: the host's engine is the referee; check here first for a quick message
+      try { Engine.apply(G, action); } catch (e) { toast(esc(e.message)); return; }
+      const a = Object.assign({}, action); delete a.seat;
+      NET.act(a).then(r => { if (r && r.ok === false) toast(esc(r.message)); });
+    } else {
+      try { setGame(Engine.apply(G, action)); }
+      catch (e) { toast(esc(e.message)); return; }
+    }
     if (before && before.action && before.action.type !== action.type) {
       const what = { buy: 'buy it', decline: 'not buy it', bid: 'keep bidding', pass: 'pass', payJail: 'pay to leave jail', useCard: 'use the jail card', roll: 'roll for doubles', accept: 'accept', reject: 'turn it down' }[before.action.type] || before.action.type;
       toast(`Hard computer would ${what}. ${esc(before.why)}`, 4200);
@@ -486,7 +599,7 @@
   }
   function pump() {
     clearTimeout(timer);
-    if (!G || G.phase === 'over' || S.tab !== 'play') return;
+    if (NETS || !G || G.phase === 'over' || S.tab !== 'play') return;
     const a = Engine.actor(G);
     if (a < 0 || G.players[a].kind !== 'cpu') return;
     const my = ++gen;
@@ -515,6 +628,7 @@
       };
     },
     center() {
+      if (NETS && !G) return `<div class="cap">Online room</div><div class="big" style="letter-spacing:.12em">${esc(NETS.code || '')}</div><div class="csub">${NETS.isHost ? 'Friends open this site, tap Play, and join with this code.' : 'Waiting for the host to start.'}</div>`;
       if (!G) return `<div class="ctitle">New game</div><div class="csub" style="margin-bottom:8px">Set the seats and rules below.</div><div class="row"><button class="btn warm" data-act="start">Start game</button></div>`;
       const st = G, me = humanSeat(st), a = Engine.actor(st);
       const who = a >= 0 ? st.players[a] : null;
@@ -523,7 +637,7 @@
       lastDiceKey = dk;
       let h = '';
       if (st.phase === 'over') {
-        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">wins after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="newgame">New game</button></div>`;
+        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">wins after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
       }
       h += `<div class="cap"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
       if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim)}${dieHTML(st.dice[1], anim)}</div>`;
@@ -535,10 +649,10 @@
         h += `<div class="csub">${p.jail ? `In jail (try ${p.jailTries + 1} of ${st.rules.shortGame ? 1 : 3})` : st.doubles ? 'Doubles! Roll again.' : 'Your turn.'}</div><div class="row">${btn('g:roll', 'Roll', 'warm')}${p.jail && p.cash >= 50 ? btn('g:payJail', 'Pay $50') : ''}${p.jail && p.cards.length ? btn('g:useCard', 'Use card') : ''}</div>`;
       } else if (st.phase === 'buy') {
         const s = SQ[st.pendingBuy];
-        h += `<div class="ctitle">${esc(s.name)}</div><div class="csub">${money(s.price)} · you have ${money(p.cash)}</div><div class="row">${btn('g:buy', 'Buy ' + money(s.price), 'warm', p.cash < s.price ? 'disabled' : '')}${btn('g:decline', st.rules.auction ? 'Auction' : 'Skip')}</div>`;
+        h += `<div class="ctitle">${esc(s.name)}</div><div class="csub">${money(s.price)} · you have ${money(p.cash)}</div><div class="csub">Worth about ${money(AI.lotValue(st, me, st.pendingBuy))} to you ${help('worth')}</div><div class="row">${btn('g:buy', 'Buy ' + money(s.price), 'warm', p.cash < s.price ? 'disabled' : '')}${btn('g:decline', st.rules.auction ? 'Auction' : 'Skip')}</div>`;
       } else if (st.phase === 'auction') {
         const au = st.auction, s = SQ[au.sq];
-        h += `<div class="ctitle">Auction: ${esc(s.name)}</div><div class="csub">High bid ${au.bidder >= 0 ? money(au.high) + ' by ' + esc(st.players[au.bidder].name) : 'none yet'} · you have ${money(p.cash)}</div>
+        h += `<div class="ctitle">Auction: ${esc(s.name)}</div><div class="csub">High bid ${au.bidder >= 0 ? money(au.high) + ' by ' + esc(st.players[au.bidder].name) : 'none yet'} · you have ${money(p.cash)}</div><div class="csub">Worth about ${money(AI.lotValue(st, me, au.sq))} to you ${help('worth')}</div>
           <div class="row">${[10, 50, 100].map(x => btn('g:bid', '+$' + x, x === 10 ? 'warm' : '', `data-v="${au.high + x}" ${au.high + x > p.cash ? 'disabled' : ''}`)).join('')}${btn('g:pass', 'Pass')}</div>`;
       } else if (st.phase === 'debt') {
         const d = st.debts[0];
@@ -551,6 +665,7 @@
       return h;
     },
     panel() {
+      if (NETS && !G) return Play.lobbyPanel();
       if (!G) return Play.setupPanel();
       const st = G;
       let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
@@ -558,8 +673,21 @@
         const lots = st.own.filter(o => o.owner === k).length;
         h += `<div class="rowi tap" data-act="pinfo" data-k="${k}" style="${p.out ? 'opacity:.4' : ''}${k === st.turn ? ';box-shadow:0 0 0 1px ' + COLORS[k] : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + ' lots' + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
       });
+      if (st.phase === 'over') h += '</div>' + worthChart(S.hist, st) + '<div>';
       h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(l)}</div>`).join('')}</div>
-        <div class="row" style="margin-top:12px;display:flex;gap:8px"><button class="btn small ghost" data-act="newgame">New game</button></div>`;
+        <div class="row" style="margin-top:12px;display:flex;gap:8px">${NETS ? `<span class="csub" style="align-self:center">Room ${esc(NETS.code)}${NETS.hostAway ? ' · host away' : ''}</span><button class="btn small ghost" data-act="netleave">Leave room</button>` : '<button class="btn small ghost" data-act="newgame">New game</button>'}</div>`;
+      return h;
+    },
+    lobbyPanel() {
+      const n = NETS;
+      let h = `<div class="ph"><h2>Room ${esc(n.code)}</h2></div><div class="list">`;
+      n.seats.forEach((s, k) => {
+        const label = s.kind === 'empty' ? 'Open seat' : esc(s.name || 'Player') + (k === n.mySeat ? ' (you)' : '');
+        const sub = s.kind === 'computer' ? 'computer · ' + ((n.options.levels || [])[k] || 'medium') : s.kind === 'empty' ? 'a friend can join here' : (s.online ? 'online' : 'offline') + (s.isHost ? ' · host' : '');
+        h += `<div class="rowi"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${label}<br><span class="sub">${sub}</span></span>${n.isHost && k !== n.mySeat ? `<div class="seg" style="margin-left:auto">${['empty', 'computer'].map(x => `<button data-act="netseat" data-k="${k}" data-v="${x}" aria-pressed="${s.kind === x}">${x === 'empty' ? 'Friend' : 'Computer'}</button>`).join('')}</div>` : ''}</div>`;
+      });
+      h += `</div><p class="csub" style="margin:8px 2px">Open seats become computers when the game starts. ${help('online')}</p>
+        <div class="row" style="display:flex;gap:8px;margin-top:10px">${n.isHost ? `<button class="btn warm" style="flex:1" data-act="netstart" ${netBusy ? 'disabled' : ''}>Start game</button>` : ''}<button class="btn ghost" data-act="netleave">${n.isHost ? 'Close room' : 'Leave'}</button></div>`;
       return h;
     },
     setupPanel() {
@@ -572,7 +700,10 @@
           ${su.seats.length > 2 ? `<button class="btn small ghost" data-act="delseat" data-k="${k}" aria-label="Remove">×</button>` : ''}</div>`;
         if (s.kind === 'cpu') h += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px"><div class="seg">${['easy', 'medium', 'hard'].map(x => `<button data-act="slevel" data-k="${k}" data-v="${x}" aria-pressed="${s.level === x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>${help('strength')}</div>`;
       });
-      h += `</div><p class="csub" style="margin:6px 2px">Online seats: coming soon.</p>
+      h += `</div>
+        <div class="sec">Online ${help('online')}</div>
+        <div class="line"><span class="lbl">Other Person seats open for friends</span><button class="btn small" data-act="netcreate" ${netBusy ? 'disabled' : ''}>Create room</button></div>
+        <div class="line"><input class="num" style="width:110px;text-align:left;text-transform:uppercase" data-act="netcode" value="${esc(S.netCode || '')}" maxlength="5" placeholder="Code" aria-label="Room code" autocapitalize="characters" autocomplete="off"><span style="flex:1"></span><button class="btn small" data-act="netjoin" ${netBusy ? 'disabled' : ''}>Join</button></div>
         <div class="sec">Rules</div>
         ${sw('auction', 'Auctions')}
         ${sw('shortGame', 'Short game')}
@@ -655,10 +786,38 @@
           const r = su.rules;
           const rules = { auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100 };
           gen++; clearTimeout(timer); lastDiceKey = '';
-          setGame(Engine.newGame(su.seats.map(s => ({ name: s.name || 'Player', kind: s.kind, level: s.level || 'medium' })), rules));
+          const ng = Engine.newGame(su.seats.map(s => ({ name: s.name || 'Player', kind: s.kind, level: s.level || 'medium' })), rules);
+          ng.startId = Date.now();
+          setGame(ng);
           render(); pump(); return;
         }
         case 'newgame': gen++; clearTimeout(timer); setGame(null); render(); return;
+        case 'netcreate': {
+          const mine = su.seats.findIndex(x => x.kind === 'human');
+          const name = (su.seats[mine >= 0 ? mine : 0].name || 'Player').slice(0, 12);
+          const r = su.rules;
+          const rules = { auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100 };
+          const seats = su.seats.map(x => (x.kind === 'human' ? 'human' : { kind: 'computer', name: x.name || 'Computer' }));
+          if (mine < 0) seats[0] = 'human';
+          netRun(N => N.createRoom({ name, seats, options: { rules, levels: su.seats.map(x => x.level || 'medium') } }));
+          return;
+        }
+        case 'netjoin': {
+          const code = String(S.netCode || '').trim().toUpperCase();
+          if (code.length !== 5) { toast('Type the 5-letter room code.'); return; }
+          const mine = su.seats.find(x => x.kind === 'human');
+          netRun(N => N.joinRoom(code, ((mine && mine.name) || 'Player').slice(0, 12)));
+          return;
+        }
+        case 'netseat': if (NET) netRun(N => N.setSeat(+d.k, d.v)); return;
+        case 'netstart': if (NET) netRun(N => N.start()); return;
+        case 'netleave': {
+          if (!NET) return;
+          const N = NET;
+          const p = NETS && NETS.isHost && NETS.status !== 'playing' ? N.close() : N.leave();
+          Promise.resolve(p).catch(() => null).then(() => netDrop(''));
+          return;
+        }
         case 'addseat': su.seats.push({ name: 'Seat ' + (su.seats.length + 1), kind: 'cpu', level: 'medium' }); break;
         case 'delseat': su.seats.splice(+d.k, 1); break;
         case 'skind': su.seats[+d.k].kind = d.v; if (d.v === 'cpu' && !su.seats[+d.k].level) su.seats[+d.k].level = 'medium'; break;
@@ -698,6 +857,7 @@
     },
     input(a, d, e) {
       if (a === 'sname') { S.setup.seats[+d.k].name = e.target.value.slice(0, 12); save(); return; }
+      if (a === 'netcode') { S.netCode = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5); save(); return; }
       if (a === 'gcash' && Play.gt) { tradeEdit(G, Play.gt, a, d, e); const s = $('sheet'); const keep = s.scrollTop; const tv = s.querySelector('.sec:last-of-type'); void tv; Play.refreshTradeResult(); s.scrollTop = keep; }
     },
     refreshTradeResult() {
@@ -752,14 +912,19 @@
     },
   };
   // measured in tools/sim.js; numbers filled in from progress.md
-  const STRENGTH = '<p class="csub">Measuring…</p>';
+  const STRENGTH = `<p class="csub" style="margin:2px 2px 8px">Win rate over 1,000 computer-only games each (a fair share is 25% at a 4-seat table, 50% one-on-one).</p>
+    <table class="t"><tr><th>Table</th><th>Win rate</th></tr>
+    <tr><td>Hard vs 3 Medium</td><td>Hard 60%</td></tr>
+    <tr><td>Medium vs 3 Easy</td><td>Medium 81%</td></tr>
+    <tr><td>Hard, Medium, 2 Easy</td><td>71% · 24% · 3% each</td></tr>
+    <tr><td>Hard vs Easy, 2 seats</td><td>Hard 63%</td></tr></table>`;
 
   const SCREENS = { odds: Odds, table: Table, trade: Trade, play: Play, settings: Settings };
 
   // ---------------------------------------------------------------- render
   function render() {
     renderTabs();
-    G = S.game;
+    G = NETS ? NETS.pub : S.game;
     const sc = SCREENS[S.tab];
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
     $('center').innerHTML = sc.center();
@@ -771,6 +936,7 @@
   // redraw everything except the panel (keeps a focused input and its keyboard)
   function renderLight(withResult) {
     const sc = SCREENS[S.tab];
+    G = NETS ? NETS.pub : S.game;
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
     $('center').innerHTML = sc.center();
     if (withResult && S.tab === 'trade') {
@@ -818,6 +984,10 @@
   BV = BoardView.create($('board'), boardTap);
   render();
   pump();
+  // back into an online room after a reload
+  try {
+    if (localStorage.getItem(NET_FLAG)) netLoad().then(m => netAttach(m).resume()).then(ok => { if (!ok) netDrop(''); }).catch(() => netDrop(''));
+  } catch (e) { /* storage blocked */ }
   let rt = null;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { layout(); render(); }, 120); });
   // the trade tab's result block gets the same wrapper so typing cash doesn't redraw inputs
