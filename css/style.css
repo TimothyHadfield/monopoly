@@ -6,7 +6,7 @@
   --good: #6ee7a8; --bad: #f08c8c; --mid: #f0d36e;
   --sq: #1d2231; --sq-line: #333b52;
   --radius: 12px;
-  --head: 48px; --tabh: 58px;
+  --head: 44px; --tabh: 58px;
 }
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
@@ -56,8 +56,20 @@ main { min-height: 0; display: flex; flex-direction: column; align-items: center
   .tabs-bottom { display: none; }
   main { flex-direction: row; align-items: stretch; justify-content: center; padding: 16px 20px; gap: 22px; }
   .board-col { display: flex; align-items: flex-start; }
-  .panel-col { flex: 0 1 430px; max-width: 460px; padding: 0 4px 16px; }
+  .panel-col { flex: 0 1 480px; max-width: 500px; padding: 0 4px 16px; }
 }
+/* phone: the version lives in Settings; small buttons still get a 40px tap target;
+   game player rows are one line each so more of the table fits above the tab bar */
+@media (max-width: 899px) {
+  .ver { display: none; }
+  .btn.small { min-height: 40px; min-width: 40px; }
+  .prow { min-height: 40px; padding: 5px 10px; }
+  .prow .name br { display: none; }
+  .prow .name .sub { margin-left: 6px; }
+  .prow .v { display: flex; align-items: baseline; gap: 6px; }
+  .prow .v small { display: inline; }
+}
+.prow.turn { box-shadow: inset 3px 0 0 var(--pc), 0 0 0 1px var(--pc); }
 
 /* ---------- board ---------- */
 .sq rect.base { fill: var(--sq); stroke: var(--sq-line); stroke-width: 2; }
@@ -69,11 +81,15 @@ main { min-height: 0; display: flex; flex-direction: column; align-items: center
 .sq .price { font-size: 13px; fill: var(--muted); }
 .board-small .sq .nm, .board-small .sq .price { display: none; }
 .board-small .sq .val { font-size: 25px; }
+.sq .sprice { display: none; font-size: 25px; font-weight: 650; fill: #b9bfd0; font-variant-numeric: tabular-nums; }
+.board-small .sq .sprice { display: inline; }
 .sq .glyph { fill: none; stroke: #8f97ad; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
 .board-felt { fill: #131722; stroke: var(--sq-line); stroke-width: 2; }
-.token { transition: transform .14s ease-out; }
+.token { filter: drop-shadow(0 3px 2px rgba(0,0,0,.55)); }
 .token circle { stroke: #0f1117; stroke-width: 4; }
-.token.turn circle { stroke: #fff; stroke-width: 5; }
+.token circle.shine { fill: #fff; opacity: .38; stroke: none; }
+.token.turn circle:first-child { stroke: #fff; stroke-width: 5; }
+.board-small .token.turn circle:first-child { stroke-width: 6; }
 .house { stroke: #0f1117; stroke-width: 2; }
 .ownmark { stroke: #0f1117; stroke-width: 2; }
 
@@ -85,7 +101,16 @@ main { min-height: 0; display: flex; flex-direction: column; align-items: center
 .chip-band { width: 40%; height: 6px; border-radius: 3px; margin: 2px auto 6px; }
 .center .row { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
 .center .btn { padding: 8px 12px; font-size: 14px; }
-@media (min-width: 900px) { .center .btn { padding: 11px 18px; font-size: 15px; } .ctitle { font-size: 19px; } .csub { font-size: 14px; } }
+.cap.turn { font-size: 13px; color: var(--text); }
+@media (min-width: 900px) {
+  .center .btn { padding: 13px 24px; font-size: 17px; border-radius: 12px; }
+  .center .row { gap: 10px; margin-top: 10px; }
+  .ctitle { font-size: 26px; }
+  .csub { font-size: 14px; }
+  .center .csub { font-size: 16px; }
+  .big { font-size: 72px; }
+  .cap.turn { font-size: 15px; }
+}
 
 /* ---------- controls ---------- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--card); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 14px; font-weight: 650; min-height: 40px; transition: background .12s, border-color .12s, transform .06s; }
@@ -168,7 +193,7 @@ table.t tr.tap { cursor: pointer; }
 .die i.on { visibility: visible; }
 .die.roll { animation: roll .45s ease-out; }
 @keyframes roll { 0% { transform: rotate(-90deg) scale(.7); } 60% { transform: rotate(12deg) scale(1.08); } 100% { transform: none; } }
-@media (min-width: 900px) { .die { width: 48px; height: 48px; padding: 7px; } .die i { width: 8px; height: 8px; } }
+@media (min-width: 900px) { .dice { gap: 12px; margin: 8px 0; } .die { width: 64px; height: 64px; padding: 10px; border-radius: 12px; } .die i { width: 11px; height: 11px; } .cardnote { font-size: 15px; padding: 9px 14px; } .cardnote b { font-size: 11px; } }
 .cardnote { background: #f4f1ea; color: #16181f; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; max-width: 90%; margin: 4px auto; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
 .cardnote b { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #8a5a00; }
 .cardnote.chest b { color: #1f5fa8; }

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.3 · 2026-10-20';
+  const VERSION = 'v1.4 · 2026-10-20';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -123,9 +123,9 @@
   // ---------------------------------------------------------------- layout
   function layout() {
     const wide = innerWidth >= 900;
-    const head = wide ? 56 : 48, tab = wide ? 0 : $('tabsBottom').offsetHeight || 58;
+    const head = wide ? 56 : 44, tab = wide ? 0 : $('tabsBottom').offsetHeight || 58;
     let size;
-    if (wide) size = Math.min(innerHeight - head - 32, innerWidth - 460 - 64);
+    if (wide) size = Math.min(innerHeight - head - 32, innerWidth - 500 - 64);
     else size = Math.min(innerWidth - 16, innerHeight - head - tab - 16 - 190);
     size = Math.max(260, Math.floor(size));
     $('boardWrap').style.width = size + 'px';
@@ -254,9 +254,9 @@
         const c = BoardView.goodBad(1 - (x.payback - lo) / (hi - lo));
         h += `<tr class="tap" data-act="selsq" data-sq="${GROUPS[x.g][GROUPS[x.g].length - 1]}"><td><span class="dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${GROUP_COLOR[x.g]};margin-right:6px"></span>${GROUP_NAME[x.g]}</td><td>${pct(x.land)}</td><td>${money(x.rent)}</td><td>${money(x.cost)}</td><td style="color:${c};font-weight:700">${Math.round(x.payback)}</td></tr>`;
       });
-      h += '</table>';
-      const rr = setStats('rr', 0), ut = setStats('util', 0);
-      h += `<table class="t" style="margin-top:6px"><tr><td>Railroads (all 4)</td><td>${pct(rr.land)}</td><td>${money(rr.rent)}</td><td>${money(rr.cost)}</td><td>${Math.round(rr.payback)}</td></tr><tr><td>Utilities (both)</td><td>${pct(ut.land)}</td><td>${money(ut.rent)}</td><td>${money(ut.cost)}</td><td>${Math.round(ut.payback)}</td></tr></table>`;
+      // railroads + utilities in the same table so their columns line up with the colour sets
+      const rr = setStats('rr', 0), ut = setStats('util', 0), sep = ' style="border-top:2px solid var(--line)"';
+      h += `<tr><td${sep}>Railroads (all 4)</td><td${sep}>${pct(rr.land)}</td><td${sep}>${money(rr.rent)}</td><td${sep}>${money(rr.cost)}</td><td${sep}>${Math.round(rr.payback)}</td></tr><tr><td>Utilities (both)</td><td>${pct(ut.land)}</td><td>${money(ut.rent)}</td><td>${money(ut.cost)}</td><td>${Math.round(ut.payback)}</td></tr></table>`;
       const st = stat();
       h += `<p class="csub" style="margin:10px 2px">A turn has ${st.throwsPerTurn.toFixed(3)} throws on average (doubles throw again). ${pct(st.jailShare)} of throws are made from inside jail.</p>`;
       return h;
@@ -651,7 +651,7 @@
       if (st.phase === 'over') {
         return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
       }
-      h += `<div class="cap"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
+      h += `<div class="cap turn"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
       if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim)}${dieHTML(st.dice[1], anim)}</div>`;
       if (st.lastCard && st.lastCard.n === st.turns) h += `<div class="cardnote ${st.lastCard.deck}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
       if (me < 0) { h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div>`; return h; }
@@ -684,7 +684,7 @@
       let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
       st.players.forEach((p, k) => {
         const lots = st.own.filter(o => o.owner === k).length;
-        h += `<div class="rowi tap" data-act="pinfo" data-k="${k}" style="${p.out ? 'opacity:.4' : ''}${k === st.turn ? ';box-shadow:0 0 0 1px ' + COLORS[k] : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
+        h += `<div class="rowi tap prow${k === st.turn ? ' turn' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};${p.out ? 'opacity:.4' : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
       });
       if (st.phase === 'over') h += '</div>' + worthChart(S.hist, st) + '<div>';
       h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(say(l))}</div>`).join('')}</div>
@@ -711,7 +711,7 @@
         h += `<div class="rowi"><span class="dot" style="background:${COLORS[k]}"></span><input class="num" style="width:96px;text-align:left" data-act="sname" data-k="${k}" value="${esc(s.name)}" maxlength="12" aria-label="Name">
           <div class="seg" style="margin-left:auto">${['human', 'cpu'].map(x => `<button data-act="skind" data-k="${k}" data-v="${x}" aria-pressed="${s.kind === x}">${x === 'human' ? 'Person' : 'Computer'}</button>`).join('')}</div>
           ${su.seats.length > 2 ? `<button class="btn small ghost" data-act="delseat" data-k="${k}" aria-label="Remove">×</button>` : ''}</div>`;
-        if (s.kind === 'cpu') h += `<div style="display:flex;justify-content:flex-end;padding:2px 0 6px"><div class="seg">${['easy', 'medium', 'hard'].map(x => `<button data-act="slevel" data-k="${k}" data-v="${x}" aria-pressed="${s.level === x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>${help('strength')}</div>`;
+        if (s.kind === 'cpu') h += `<div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;padding:2px 0 6px"><div class="seg">${['easy', 'medium', 'hard'].map(x => `<button data-act="slevel" data-k="${k}" data-v="${x}" aria-pressed="${s.level === x}">${x[0].toUpperCase() + x.slice(1)}</button>`).join('')}</div>${help('strength')}</div>`;
       });
       h += `</div>
         <div class="sec">Online ${help('online')}</div>
