@@ -237,3 +237,43 @@ test('40 full computer games: rules invariants hold after every action', () => {
     assert.ok(st.winner >= 0);
   }
 });
+
+test('mortgage money is exact: unmortgage = half price + 10% rounded up; interest on a traded mortgaged lot', () => {
+  B.SQ.forEach((s, i) => { if (s.price) assert.strictEqual(E.unmortgageCost(i), s.price / 2 + Math.ceil(s.price / 20), s.name); });
+  assert.strictEqual(E.unmortgageCost(5), 110);  // Reading Railroad
+  assert.strictEqual(E.unmortgageCost(39), 220); // Boardwalk
+  assert.strictEqual(E.unmortgageCost(37), 193); // Park Place: 175 + 17.5 -> 193
+  let st = game(2);
+  st.own[5].owner = 0; st.own[5].mort = true;
+  const before = st.players[1].cash;
+  st = E.apply(st, { type: 'propose', seat: 0, trade: { to: 1, give: [5], get: [], getCash: 0 } });
+  st = E.apply(st, { type: 'accept', seat: 1 });
+  assert.strictEqual(st.players[1].cash, before - 10, '10% of the $100 mortgage');
+});
+
+test('no giving up while mortgaging could still pay; a debtor may sell a lot to another player', () => {
+  let st = game(2);
+  st.own[39].owner = 0; // Boardwalk, mortgage value $200
+  st.players[0].cash = 50;
+  st.debts = [{ who: 0, amount: 120, to: 1, why: 'rent' }];
+  st = E.settle(st);
+  assert.strictEqual(st.phase, 'debt');
+  assert.throws(() => E.apply(st, { type: 'bankrupt', seat: 0 }), /raise/);
+  assert.ok(!E.legal(st, 0).some(a => a.type === 'bankrupt'));
+  // sell Boardwalk to P1 for $300 while in debt, then pay
+  let s2 = E.apply(st, { type: 'propose', seat: 0, trade: { to: 1, give: [39], get: [], getCash: 300 } });
+  assert.strictEqual(s2.phase, 'trade');
+  s2 = E.apply(s2, { type: 'accept', seat: 1 });
+  assert.strictEqual(s2.phase, 'debt');
+  s2 = E.apply(s2, { type: 'payDebt', seat: 0 });
+  assert.strictEqual(s2.players[0].cash, 50 + 300 - 120);
+  // truly broke: giving up is allowed
+  st.own[39].mort = true;
+  assert.ok(E.legal(st, 0).some(a => a.type === 'bankrupt'));
+});
+
+test('time limit: the game ends after the last round and says "round 20 of 20", not 21', () => {
+  let st = E.newGame(seats(2).map(s => Object.assign(s, { kind: 'cpu', level: 'easy' })), { roundLimit: 20 }, 11);
+  while (st.phase !== 'over') st = E.apply(st, AI.choose(st, E.actor(st)).action);
+  assert.ok(st.round <= 20, 'round ' + st.round);
+});

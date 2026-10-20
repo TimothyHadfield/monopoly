@@ -204,7 +204,7 @@
     st.turn = j; st.turns++;
     st.resume = 'roll';
     st.lastCard = null; st.proposals = 0;
-    if (st.rules.roundLimit && st.round > st.rules.roundLimit) return finishByWorth(st, `Round limit reached.`);
+    if (st.rules.roundLimit && st.round > st.rules.roundLimit) { st.round = st.rules.roundLimit; return finishByWorth(st, `Round limit reached.`); }
     if (st.turns >= st.rules.maxTurns) return finishByWorth(st, `Turn limit reached.`);
     log(st, `${st.players[j].name} to roll.`);
   }
@@ -222,6 +222,7 @@
     const alive = st.players.filter(p => !p.out).length;
     if (alive <= 1) { st.winner = st.players.findIndex(p => !p.out); st.phase = 'over'; log(st, `${name(st, st.winner)} wins!`); return st; }
     if (st.rules.shortGame && st.bankruptcies >= 1) { finishByWorth(st, 'Short game ends at the first bankruptcy.'); return st; }
+    if (st.trade) { st.phase = 'trade'; return st; } // a debtor may sell to another player to raise cash
     if (st.debts.length) { st.phase = 'debt'; return st; }
     if (!st.auction && st.auctionQueue.length) startAuction(st, st.auctionQueue.shift());
     if (st.auction) { st.phase = 'auction'; return st; }
@@ -273,7 +274,7 @@
       c.cash += p.cash;
       lots.forEach(sq => {
         st.own[sq].owner = to;
-        if (st.own[sq].mort) charge(st, to, Math.ceil(SQ[sq].price / 2 * 0.1), -1, `10% interest on ${SQ[sq].name}`);
+        if (st.own[sq].mort) charge(st, to, Math.ceil(SQ[sq].price / 20), -1, `10% interest on ${SQ[sq].name}`);
       });
       c.cards.push(...p.cards);
       log(st, `${p.name} is bankrupt; everything goes to ${c.name}.`);
@@ -301,7 +302,7 @@
     const o = st.own[sq];
     return isMine(st, i, sq) && !o.mort && (SQ[sq].type !== 'prop' || GROUPS[SQ[sq].group].every(j => st.own[j].houses === 0));
   }
-  const unmortgageCost = sq => Math.ceil(SQ[sq].price / 2 * 1.1);
+  const unmortgageCost = sq => SQ[sq].price / 2 + Math.ceil(SQ[sq].price / 20); // integer math: no float round-up
   function canManage(st, i) { // build / sell / mortgage outside of a buy or auction
     if (st.phase === 'over' || st.players[i].out) return false;
     if (st.phase === 'debt') return st.debts[0].who === i;
@@ -309,6 +310,14 @@
   }
 
   // Every action the seat may take now (types only, plus targets for management).
+  // official rule: you are bankrupt only when selling buildings and mortgaging still can't cover what you owe
+  function owed(st, i) { return st.debts.filter(d => d.who === i).reduce((a, d) => a + d.amount, 0); }
+  function canGiveUp(st, i) {
+    if (st.players[i].cash + Money.liquidValue(st, i) < owed(st, i)) return true;
+    // stuck: nothing can be sold or mortgaged right now (e.g. a hotel with no houses left in the bank)
+    for (let sq = 0; sq < 40; sq++) if (Money.canSell(st, i, sq) || canMortgage(st, i, sq)) return false;
+    return true;
+  }
   function legal(st, i) {
     const out = [];
     if (st.phase === 'over' || i < 0 || st.players[i].out) return out;
@@ -323,7 +332,7 @@
     if (me && st.phase === 'buy') { if (p.cash >= SQ[st.pendingBuy].price) out.push({ type: 'buy' }); out.push({ type: 'decline' }); }
     if (me && st.phase === 'auction') { out.push({ type: 'bid' }); out.push({ type: 'pass' }); }
     if (me && st.phase === 'trade') { out.push({ type: 'accept' }); out.push({ type: 'reject' }); }
-    if (me && st.phase === 'debt') { if (p.cash >= st.debts[0].amount) out.push({ type: 'payDebt' }); out.push({ type: 'bankrupt' }); }
+    if (me && st.phase === 'debt') { if (p.cash >= st.debts[0].amount) out.push({ type: 'payDebt' }); else if (canGiveUp(st, i)) out.push({ type: 'bankrupt' }); out.push({ type: 'propose' }); }
     if (canManage(st, i)) {
       for (let sq = 0; sq < 40; sq++) {
         if (st.phase !== 'debt' && Money.canBuild(st, i, sq) && p.cash >= SQ[sq].house) out.push({ type: 'build', sq });
@@ -469,11 +478,12 @@
         return settle(st);
       }
       case 'bankrupt':
-        if (st.phase !== 'debt') fail('not now');
+        if (st.phase !== 'debt' || !me) fail('not now');
+        if (!canGiveUp(st, i)) fail('you can still raise enough: sell buildings or mortgage first');
         goBankrupt(st, i);
         return settle(st);
       case 'propose': {
-        if (st.phase !== 'roll' && st.phase !== 'end') fail('not now');
+        if (!me || (st.phase !== 'roll' && st.phase !== 'end' && st.phase !== 'debt')) fail('not now');
         if ((st.proposals || 0) >= 3) fail('three offers per turn');
         st.proposals = (st.proposals || 0) + 1;
         const tr = action.trade; // { to, give:[sq], get:[sq], giveCash, getCash, giveCards, getCards }
@@ -505,8 +515,8 @@
         for (let k = 0; k < tr.getCards; k++) A.cards.push(Bp.cards.shift());
         log(st, `${Bp.name} accepts the trade.`);
         // receiving a mortgaged lot costs 10% interest straight away (official rule)
-        tr.give.forEach(sq => { if (st.own[sq].mort) charge(st, tr.to, Math.ceil(SQ[sq].price / 2 * 0.1), -1, `10% interest on ${SQ[sq].name}`); });
-        tr.get.forEach(sq => { if (st.own[sq].mort) charge(st, tr.from, Math.ceil(SQ[sq].price / 2 * 0.1), -1, `10% interest on ${SQ[sq].name}`); });
+        tr.give.forEach(sq => { if (st.own[sq].mort) charge(st, tr.to, Math.ceil(SQ[sq].price / 20), -1, `10% interest on ${SQ[sq].name}`); });
+        tr.get.forEach(sq => { if (st.own[sq].mort) charge(st, tr.from, Math.ceil(SQ[sq].price / 20), -1, `10% interest on ${SQ[sq].name}`); });
         return settle(st);
       }
     }
@@ -523,6 +533,6 @@
     return v;
   }
 
-  const Engine = { DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
+  const Engine = { canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
   if (node) module.exports = Engine; else root.Engine = Engine;
 })(this);

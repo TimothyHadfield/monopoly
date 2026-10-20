@@ -174,3 +174,5 @@ table.t tr.tap { cursor: pointer; }
 .cardnote.chest b { color: #1f5fa8; }
 @media (prefers-reduced-motion: reduce) { .token { transition: none; } .die.roll, .sheet { animation: none; } }
 .sec + .line, .ph + .line { border-top: 0; }
+/* fast taps on buttons and the board must not select text or zoom on iPhone */
+.btn, .seg button, .chip, #center, #board, .tabs { -webkit-user-select: none; user-select: none; touch-action: manipulation; -webkit-touch-callout: none; }

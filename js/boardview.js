@@ -45,8 +45,8 @@
   }
 
   // simple line glyphs, centred on (cx, cy), about 36 units tall
-  function glyph(i, cx, cy, parent) {
-    const s = SQ[i], g = el('g', { class: 'glyph', transform: `translate(${cx} ${cy})` }, parent);
+  function glyph(i, cx, cy, parent, scale) {
+    const s = SQ[i], g = el('g', { class: 'glyph', transform: `translate(${cx} ${cy})${scale ? ` scale(${scale})` : ''}` }, parent);
     const t = s.type;
     if (t === 'chance') { const q = el('text', { x: 0, y: 14, 'font-size': 46, 'font-weight': 800, fill: '#f0b354', stroke: 'none', 'text-anchor': 'middle' }, g); q.textContent = '?'; }
     else if (t === 'cc') { el('rect', { x: -18, y: -10, width: 36, height: 24, rx: 3, stroke: '#6ea8fe' }, g); el('path', { d: 'M-18 -2 H18 M-18 -10 Q0 -24 18 -10', stroke: '#6ea8fe' }, g); el('rect', { x: -4, y: -5, width: 8, height: 7, stroke: '#6ea8fe' }, g); }
@@ -76,12 +76,14 @@
       const r = inner(g, hasBand);
       const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
       const isCorner = g.side === 'corner';
-      const nm = el('text', { class: 'nm', x: cx, y: isCorner ? r.y + 22 : r.y + 20 }, grp);
+      // the owner strip sits on the outer edge: keep the name (top row) and price (bottom row) clear of it
+      const nm = el('text', { class: 'nm', x: cx, y: isCorner ? r.y + 22 : g.side === 'top' ? r.y + 30 : r.y + 20 }, grp);
       nm.textContent = isCorner ? (i === 10 ? 'Jail' : i === 30 ? 'To Jail' : i === 20 ? 'Parking' : '') : s.short;
-      const gl = (s.type !== 'prop') ? glyph(i, cx, isCorner ? cy - (i === 10 ? -10 : 8) : cy + 2, grp) : null;
+      const sideways = g.side === 'left' || g.side === 'right'; // short squares: smaller picture between name and price
+      const gl = (s.type !== 'prop') ? glyph(i, cx, isCorner ? cy - (i === 10 ? -10 : 8) : sideways ? cy + 1 : cy + 4, grp, sideways ? 0.62 : 0) : null;
       // corners: picture in the middle, number underneath (jail: bottom-left, clear of the bars)
       const val = el('text', { class: 'val', x: i === 10 ? cx - 26 : cx, y: isCorner ? cy + 50 : cy + 10 }, grp);
-      const price = el('text', { class: 'price', x: cx, y: r.y + r.h - 10 }, grp);
+      const price = el('text', { class: 'price', x: cx, y: r.y + r.h - (g.side === 'bottom' ? 18 : 10) }, grp);
       if (s.price) price.textContent = '$' + s.price;
       // owner mark on the outer edge, buildings on the band
       const om = el('rect', { class: 'ownmark', visibility: 'hidden' }, grp);

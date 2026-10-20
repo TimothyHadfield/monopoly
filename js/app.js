@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.1 · 2026-10-19';
+  const VERSION = 'v1.2 · 2026-10-19';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -48,10 +48,15 @@
   // ---------------------------------------------------------------- helpers
   const $ = id => document.getElementById(id);
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const money = n => (n < 0 ? '−$' : '$') + Math.abs(Math.round(n)).toLocaleString('en-US');
+  const money = n => { const r = Math.round(n) || 0; return (r < 0 ? '−$' : '$') + Math.abs(r).toLocaleString('en-US'); };
+  // blank names become "Seat N"; repeats get a number so the log and chart stay readable
+  const uniqueNames = names => { const seen = {}; return names.map((n, k) => { let b = String(n || '').trim() || 'Seat ' + (k + 1); let x = b, j = 2; while (seen[x.toLowerCase()]) x = b + ' ' + j++; seen[x.toLowerCase()] = 1; return x; }); };
+  const wins = nm => (nm === 'You' ? 'You win' : nm + ' wins');
   const signed = n => (n > 0.5 ? '+' : '') + money(n);
   const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  // "$1,250" -> 1250, "12.75" -> 13, "1e5" -> 100000; anything unreadable -> null (keep the old value)
+  const readCash = str => { const v = Number(String(str).replace(/[$,\s]/g, '')); return str === '' ? 0 : Number.isFinite(v) ? Math.round(v) : null; };
   const help = key => `<button class="help" data-act="help" data-k="${key}" aria-label="Why?">?</button>`;
   const HELP = {
     land: 'Exact long-run odds from a Markov chain of the real rules: doubles, three doubles to jail, every Chance and Chest card. Jail is the most visited square because so many things send you there, which is why the oranges and reds just past it get landed on most.',
@@ -66,6 +71,7 @@
     strength: 'Measured by playing thousands of full 4-player games between computer levels with seats rotated (see How strong). Hard uses the landing odds, house payback and danger ahead to decide.',
     worth: 'The printed price, raised if it finishes one of your sets (×2.2) or blocks a set for someone else (×1.6), and nudged by how often it gets landed on. Bidding above this usually loses money.',
     online: 'One person creates a room and shares the 5-letter code; friends tap Join on their own phone or laptop. Computers run in the browser of whoever made the room. If someone leaves, a computer takes the seat. Free, no sign-up.',
+    interest: '(M) means mortgaged. Whoever receives a mortgaged lot pays the bank 10% of its mortgage value at once, and can lift the mortgage later for the mortgage value plus 10%.',
     coach: 'After each of your choices in a game, shows what the hard computer would have done instead, if it differs.',
   };
   function toast(msg, ms) {
@@ -390,7 +396,7 @@
     input(a, d, e) {
       const k = +d.k, p = T().players[k];
       if (a === 'pname') { p.name = e.target.value.slice(0, 16) || 'Player'; save(); renderLight(); }
-      if (a === 'pcash') { const v = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10); p.cash = clamp(isNaN(v) ? 0 : v, 0, 1e6); save(); renderLight(); }
+      if (a === 'pcash') { const v = readCash(e.target.value); if (v == null) return; p.cash = clamp(v, 0, 1e6); save(); renderLight(); }
     },
   };
 
@@ -408,11 +414,12 @@
       <tr><td><b>Value</b></td><td style="color:${x.value >= 0 ? 'var(--good)' : 'var(--bad)'};font-weight:800">${signed(x.value)}</td></tr></table></div>`;
     const pos = clamp(50 + ev.fair * 50, 2, 98);
     const diff = Math.abs(ev.a.value - ev.b.value);
-    const verdict = diff < 100 ? 'Fair trade' : `Better for ${esc(ps[ev.a.value > ev.b.value ? t.a : t.b].name)} by ${money(diff)}`;
+    const hi = ev.a.value > ev.b.value ? ev.a : ev.b, lo = hi === ev.a ? ev.b : ev.a;
+    const verdict = diff < 100 ? 'Fair trade' : `Better for ${esc(ps[hi === ev.a ? t.a : t.b].name)} <span class="csub">(${signed(hi.value)} vs ${signed(lo.value)})</span>`;
     return `<div class="sec">Result ${help('value')}</div>
       <div class="ctitle" style="margin:2px 2px 0">${verdict}</div>
       <div class="meter"><div class="needle" style="left:calc(${100 - pos}% - 2px)"></div></div>
-      <div class="meter-l"><span>${esc(ps[t.a].name)} wins</span><span>fair</span><span>${esc(ps[t.b].name)} wins</span></div>
+      <div class="meter-l"><span>${esc(wins(ps[t.a].name))}</span><span>fair</span><span>${esc(wins(ps[t.b].name))}</span></div>
       <div style="display:flex;gap:12px;margin-top:8px">${col(ps[t.a], ev.a)}${col(ps[t.b], ev.b)}</div>`;
   }
   function tradeBuilder(src, t, prefix) {
@@ -441,9 +448,10 @@
       const arr = t[d.side], sq = +d.sq, at = arr.indexOf(sq);
       if (at >= 0) arr.splice(at, 1); else arr.push(sq);
     } else if (a.endsWith('cash')) {
-      const v = parseInt(String(e.target.value).replace(/[^0-9]/g, ''), 10);
+      const v = readCash(e.target.value);
+      if (v == null) return;
       const who = d.side === 'aCash' ? t.a : t.b;
-      t[d.side] = clamp(isNaN(v) ? 0 : v, 0, src.players[who] ? src.players[who].cash : 0);
+      t[d.side] = clamp(v, 0, src.players[who] ? src.players[who].cash : 0);
     }
   }
   const Trade = {
@@ -492,7 +500,7 @@
     return a >= 0 && st.players[a].kind === 'human' ? a : -1;
   };
   // ---------------------------------------------------------------- online room (shared online.js)
-  let NET = null, NETS = null, netMod = null, netBusy = false;
+  let NET = null, NETS = null, netMod = null, netBusy = false, netResuming = false;
   const NET_FLAG = 'monopoly:online';
   function netLoad() {
     if (netMod) return Promise.resolve(netMod);
@@ -551,7 +559,7 @@
   // simple line chart of net worth by round (one line per player, labelled at the end)
   function worthChart(hist, st) {
     if (!hist || hist.rows.length < 2) return '';
-    const rows = hist.rows, W = 400, H = 170, L = 44, R = 70, T = 10, B = 22;
+    const rows = hist.rows, W = 400, H = 170, L = 44, R = 84, T = 10, B = 22;
     const maxW = Math.max(100, ...rows.map(x => Math.max(...x.w)));
     const r0 = rows[0].r, r1 = rows[rows.length - 1].r || 1;
     const X = r => L + (W - L - R) * (r - r0) / Math.max(1, r1 - r0), Y = v => T + (H - T - B) * (1 - v / maxW);
@@ -572,9 +580,12 @@
       const lim = i === ends.length - 1 ? floor : ends[i + 1].y - 13;
       if (ends[i].y > lim) ends[i].y = lim;
     }
-    ends.forEach(e => { g += `<text x="${W - R + 6}" y="${e.y + 4}" font-size="12" fill="#e8eaf0">${esc(st.players[e.k].name.slice(0, 9))}</text>`; });
+    ends.forEach(e => { g += `<text x="${W - R + 6}" y="${e.y + 4}" font-size="12" fill="#e8eaf0">${esc(st.players[e.k].name.length > 10 ? st.players[e.k].name.slice(0, 9) + '…' : st.players[e.k].name)}</text>`; });
     return `<div class="sec">Net worth by round</div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="Net worth by round">${g}</svg>`;
   }
+  // log lines read "You pays"; fix the verb when a seat is named You
+  const IRREG = { is: 'are', has: 'have', goes: 'go', does: 'do' };
+  const say = l => String(l).replace(/(^|[.;] |, )You (\w+)/g, (m, pre, v) => pre + 'You ' + (IRREG[v] || (/(ss|sh|ch|x)es$/.test(v) ? v.slice(0, -2) : /[^s]s$/.test(v) ? v.slice(0, -1) : v)));
   function doAction(action, fromHuman) {
     if (!G) return;
     let before = null;
@@ -628,6 +639,7 @@
       };
     },
     center() {
+      if (netResuming && !NETS) return `<div class="ctitle">Reconnecting…</div><div class="csub">Getting your online room back.</div>`;
       if (NETS && !G) return `<div class="cap">Online room</div><div class="big" style="letter-spacing:.12em">${esc(NETS.code || '')}</div><div class="csub">${NETS.isHost ? 'Friends open this site, tap Play, and join with this code.' : 'Waiting for the host to start.'}</div>`;
       if (!G) return `<div class="ctitle">New game</div><div class="csub" style="margin-bottom:8px">Set the seats and rules below.</div><div class="row"><button class="btn warm" data-act="start">Start game</button></div>`;
       const st = G, me = humanSeat(st), a = Engine.actor(st);
@@ -637,12 +649,12 @@
       lastDiceKey = dk;
       let h = '';
       if (st.phase === 'over') {
-        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">wins after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
+        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
       }
       h += `<div class="cap"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
       if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim)}${dieHTML(st.dice[1], anim)}</div>`;
       if (st.lastCard && st.lastCard.n === st.turns) h += `<div class="cardnote ${st.lastCard.deck}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
-      if (me < 0) { h += `<div class="csub">${esc(st.log[st.log.length - 1] || '')}</div>`; return h; }
+      if (me < 0) { h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div>`; return h; }
       const p = st.players[me];
       const btn = (act, label, cls, extra) => `<button class="btn ${cls || ''}" data-act="${act}" ${extra || ''}>${label}</button>`;
       if (st.phase === 'roll') {
@@ -656,25 +668,26 @@
           <div class="row">${[10, 50, 100].map(x => btn('g:bid', '+$' + x, x === 10 ? 'warm' : '', `data-v="${au.high + x}" ${au.high + x > p.cash ? 'disabled' : ''}`)).join('')}${btn('g:pass', 'Pass')}</div>`;
       } else if (st.phase === 'debt') {
         const d = st.debts[0];
-        h += `<div class="ctitle">You owe ${money(d.amount)}</div><div class="csub">to ${d.to >= 0 ? esc(st.players[d.to].name) : 'the bank'} · cash ${money(p.cash)}</div><div class="row">${btn('g:payDebt', 'Pay', 'warm', p.cash < d.amount ? 'disabled' : '')}${btn('manage', 'Raise cash')}${btn('g:bankrupt', 'Give up', 'danger')}</div>`;
+        h += `<div class="ctitle">You owe ${money(d.amount)}</div><div class="csub">to ${d.to >= 0 ? esc(st.players[d.to].name) : 'the bank'} · cash ${money(p.cash)}</div><div class="row">${btn('g:payDebt', 'Pay', 'warm', p.cash < d.amount ? 'disabled' : '')}${btn('manage', 'Raise cash')}${btn('gtrade', 'Trade')}${btn('g:bankrupt', 'Give up', 'danger', Engine.canGiveUp(st, me) ? '' : 'disabled title="Mortgage or sell first"')}</div>${Engine.canGiveUp(st, me) ? '' : '<div class="csub">Mortgage or sell to cover it; giving up comes only when nothing is left.</div>'}`;
       } else if (st.phase === 'trade') {
         h += `<div class="ctitle">${esc(st.players[st.trade.from].name)} offers a trade</div><div class="row">${btn('seeoffer', 'See offer', 'warm')}</div>`;
       } else if (st.phase === 'end') {
-        h += `<div class="csub">${esc(st.log[st.log.length - 1] || '')}</div><div class="row">${btn('g:end', 'End turn', 'primary')}${btn('manage', 'Build')}</div>`;
+        h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div><div class="row">${btn('g:end', 'End turn', 'primary')}${btn('manage', 'Build')}</div>`;
       }
       return h;
     },
     panel() {
+      if (netResuming && !NETS) return '<div class="empty">Reconnecting to your room…</div>';
       if (NETS && !G) return Play.lobbyPanel();
       if (!G) return Play.setupPanel();
       const st = G;
-      let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
+      let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
       st.players.forEach((p, k) => {
         const lots = st.own.filter(o => o.owner === k).length;
-        h += `<div class="rowi tap" data-act="pinfo" data-k="${k}" style="${p.out ? 'opacity:.4' : ''}${k === st.turn ? ';box-shadow:0 0 0 1px ' + COLORS[k] : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + ' lots' + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
+        h += `<div class="rowi tap" data-act="pinfo" data-k="${k}" style="${p.out ? 'opacity:.4' : ''}${k === st.turn ? ';box-shadow:0 0 0 1px ' + COLORS[k] : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
       });
       if (st.phase === 'over') h += '</div>' + worthChart(S.hist, st) + '<div>';
-      h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(l)}</div>`).join('')}</div>
+      h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(say(l))}</div>`).join('')}</div>
         <div class="row" style="margin-top:12px;display:flex;gap:8px">${NETS ? `<span class="csub" style="align-self:center">Room ${esc(NETS.code)}${NETS.hostAway ? ' · host away' : ''}</span><button class="btn small ghost" data-act="netleave">Leave room</button>` : '<button class="btn small ghost" data-act="newgame">New game</button>'}</div>`;
       return h;
     },
@@ -759,10 +772,11 @@
       const st = G, tr = st.trade;
       if (!tr) return;
       const t = { a: tr.to, b: tr.from, aGives: tr.get, bGives: tr.give, aCash: tr.getCash, bCash: tr.giveCash };
-      const list = (sqs, cash, cards) => sqs.map(i => esc(SQ[i].name)).concat(cash ? [money(cash)] : []).concat(cards ? [cards + ' jail card'] : []).join(', ') || 'nothing';
+      const list = (sqs, cash, cards) => sqs.map(i => esc(SQ[i].name) + (st.own[i].mort ? ' (M)' : '')).concat(cash ? [money(cash)] : []).concat(cards ? [cards + ' jail card'] : []).join(', ') || 'nothing';
       openSheet(`<h3>${esc(st.players[tr.from].name)} offers</h3>
         <div class="line"><span class="lbl">You get</span><b>${list(tr.give, tr.giveCash, tr.giveCards)}</b></div>
         <div class="line"><span class="lbl">You give</span><b>${list(tr.get, tr.getCash, tr.getCards)}</b></div>
+        ${(() => { const due = tr.give.filter(i => st.own[i].mort).reduce((a, i) => a + Math.ceil(SQ[i].price / 20), 0); return due ? `<div class="line"><span class="lbl">Interest you pay now ${help('interest')}</span><b>${money(due)}</b></div>` : ''; })()}
         ${tradeView(st, t)}
         <div class="acts"><button class="btn" data-act="g:reject">Turn down</button><button class="btn warm" data-act="g:accept">Accept</button></div>`);
     },
@@ -786,7 +800,8 @@
           const r = su.rules;
           const rules = { auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100 };
           gen++; clearTimeout(timer); lastDiceKey = '';
-          const ng = Engine.newGame(su.seats.map(s => ({ name: s.name || 'Player', kind: s.kind, level: s.level || 'medium' })), rules);
+          const nm = uniqueNames(su.seats.map(s => s.name));
+          const ng = Engine.newGame(su.seats.map((s, k) => ({ name: nm[k], kind: s.kind, level: s.level || 'medium' })), rules);
           ng.startId = Date.now();
           setGame(ng);
           render(); pump(); return;
@@ -832,7 +847,8 @@
           const h = AI.hint(G, me);
           const act = h.action;
           const name = { roll: 'Roll', end: 'End the turn', buy: 'Buy', decline: 'Let it go to auction', bid: `Bid ${money(act.amount || 0)}`, pass: 'Pass', payJail: 'Pay $50', useCard: 'Use your jail card', build: 'Build', propose: 'Offer a trade', payDebt: 'Pay', bankrupt: 'Give up', mortgage: 'Mortgage', sell: 'Sell a building', accept: 'Accept', reject: 'Turn it down', unmortgage: 'Unmortgage' }[act.type] || act.type;
-          toast(`<b>${name}.</b> ${esc(h.why)}`, 5000); return;
+          const why = String(h.why || '');
+          toast(why.toLowerCase().startsWith(name.toLowerCase()) ? esc(why) : `<b>${name}.</b> ${esc(why)}`, 5000); return;
         }
         case 'pinfo': {
           const k = +d.k, p = G.players[k];
@@ -905,8 +921,10 @@
       if (a === 'set') { S.settings[d.k] = d.k === 'rounds' ? +d.v : d.v; }
       if (a === 'coach') S.settings.coach = e.target.checked;
       if (a === 'resettable') {
-        if (Settings.armed) { S.table = defaults().table; S.trade = defaults().trade; Settings.armed = false; toast('Table cleared.'); }
-        else { Settings.armed = true; toast('Tap Reset again to clear the table.'); setTimeout(() => { Settings.armed = false; }, 3000); return; }
+        // a second tap between 0.4 s and 3 s confirms (a fast double-tap does not)
+        const dt = Date.now() - (Settings.armed || 0);
+        if (Settings.armed && dt > 400 && dt < 3000) { S.table = defaults().table; S.trade = defaults().trade; Settings.armed = 0; toast('Table cleared.'); }
+        else { if (!Settings.armed || dt >= 3000) { Settings.armed = Date.now(); toast('Tap Reset again to clear the table.'); } return; }
       }
       save(); render();
     },
@@ -962,6 +980,13 @@
     const el = e.target.closest('[data-act]');
     if (!el || el.tagName !== 'INPUT') return;
     const sc = SCREENS[S.tab];
+    // when a cash box loses focus, show the number that was actually kept (rounded, capped)
+    if (el.type !== 'checkbox' && /cash$/.test(el.dataset.act)) {
+      const kept = el.dataset.act === 'pcash' ? (T().players[+el.dataset.k] || {}).cash
+        : ((el.dataset.act === 'gcash' ? Play.gt : Trade.t()) || {})[el.dataset.side];
+      if (kept != null) el.value = kept;
+      return;
+    }
     if (el.type === 'checkbox') sc.act(el.dataset.act, el.dataset, e);
   }
   function onInput(e) {
@@ -986,7 +1011,10 @@
   pump();
   // back into an online room after a reload
   try {
-    if (localStorage.getItem(NET_FLAG)) netLoad().then(m => netAttach(m).resume()).then(ok => { if (!ok) netDrop(''); }).catch(() => netDrop(''));
+    if (localStorage.getItem(NET_FLAG)) {
+      netResuming = true; render();
+      netLoad().then(m => netAttach(m).resume()).then(ok => { netResuming = false; if (!ok) netDrop(''); else render(); }).catch(() => { netResuming = false; netDrop(''); });
+    }
   } catch (e) { /* storage blocked */ }
   let rt = null;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { layout(); render(); }, 120); });
