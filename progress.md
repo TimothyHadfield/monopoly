@@ -2,7 +2,7 @@
 
 ## START HERE
 Read order: this file → `CLAUDE.md` → `docs/rules-check.md` → `docs/ideas.md` → `chat.md`.
-Last updated: 2026-10-20 (v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
+Last updated: 2026-10-20 (v1.4 visual pass; v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
 
 ## Goal right now
 A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap), a real-table money companion, a trade evaluator, and full rules-exact games against measured computers, with online seats once the shared module exists.
@@ -19,6 +19,7 @@ A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap),
 | Online rooms (create / join by code, computers fill seats, reload resumes, leaver becomes a computer) | done, two-browser test against the real free Firebase project 2026-10-20 |
 | Ideas 9-11: From-here odds, worth-to-you on buy/auction, net-worth chart at game over | done |
 | QA pass (fresh agent, 2026-10-19) | all 9 findings fixed in v1.2 |
+| Visual pass (v1.4, 2026-10-20) | done: phone lots show prices, owner tint, bigger houses/tokens, gliding tokens, bigger laptop centre |
 
 ## Measured strength
 1,000 computer-only games per table, seats rotated, `tools/sim.js`, AI `reserve: 0.5` (raw JSON in `docs/sim-*.json`). Fair share: 25% at 4 seats, 50% at 2.
@@ -64,6 +65,7 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - Giving up is allowed only when cash + everything sellable/mortgageable can't cover the debt (or nothing can be sold right now). A debtor may offer trades.
 - Mortgage money uses integer math: interest = ceil(price/20), unmortgage = price/2 + ceil(price/20).
 - Computer trades (v1.3): Medium/Hard offer set-completing trades at end of turn (1 per turn), cash-balanced to the fair meter (never worse than -$50 for the other side); a declined offer isn't repeated for 6 rounds. Hard won't sell a lot that finishes someone else's set without a 25% premium. Easy never trades.
+- Visual pass v1.4 (not Tim's choices, flagged): phone board (<560px) shows each lot's price instead of a blank square; owned lots are tinted 20% toward the owner's colour; owner strip 18u on phone; phone header 44px with no version (Settings shows it); laptop panel 480px; tokens are CSS-transformed (style.transform) so they glide.
 - Online: privateView is empty (nothing secret but the seed and deck order, which publicView hides). The room creator's browser runs the engine and the computers.
 
 ## NOT verified
@@ -72,4 +74,5 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - Online with 3+ people on real phones (tested: two headless browsers, WebKit 393 px + Chromium laptop, 70 moves, reload, leave).
 - Rule-impact table (idea 12) was dropped when computer games stalled; now they finish (v1.3), so it could be revisited.
 - Hard beats Medium only modestly (32% vs fair 25%) since v1.3.
+- v1.4 token glide and owner tint checked only in headless WebKit/Chromium screenshots, not on a real iPhone.
 - Lobby shows a just-joined friend as offline for a few seconds (presence heartbeat lag).

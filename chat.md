@@ -16,3 +16,8 @@
 - **Built:** `AI.findTrade` (2-way swaps and cash-balanced deals judged by the fair meter), Hard blocking premium, declined offers remembered (`Engine.tradeKey`), `tests/finish.test.js`.
 - **Verified:** finish test failed on v1.2 (25/40 safety stops) and passes now (0/40, median 169 turns); 1000-game sims re-run (0/1000 stops for 4×Medium); offer screen phone-view 393 px + desktop.
 - **Open:** Hard's edge over Medium is now small (32% vs 25% fair).
+
+## 2026-10-20 · v1.4 visual pass (builder, manager brief)
+- **Asked:** "review them again for design improvements especially visually".
+- **Built:** a fresh read-only reviewer ranked 14 problems; fixed: phone lots show prices, owner tint + thicker owner strips, bigger phone houses/tokens with shine + shadow, tokens glide square to square, GO/corner numbers clear of the art, laptop centre text/dice/buttons bigger, one-line player rows on phone with a colour bar for whose turn, 40px small buttons on phone, railroads/utilities aligned with the set table, level row aligned, wider laptop panel.
+- **Verified:** `npm test` 43 pass; phone-view WebKit 393 px + desktop before/after of every tab, a fresh game and a round-17 mid-game save (owners + houses); 0 console errors, no overflow, no page scroll.
