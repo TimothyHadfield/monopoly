@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.6 · 2026-10-20';
+  const VERSION = 'v1.7 · 2026-10-20';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -52,6 +52,7 @@
   // blank names become "Seat N"; repeats get a number so the log and chart stay readable
   const uniqueNames = names => { const seen = {}; return names.map((n, k) => { let b = String(n || '').trim() || 'Seat ' + (k + 1); let x = b, j = 2; while (seen[x.toLowerCase()]) x = b + ' ' + j++; seen[x.toLowerCase()] = 1; return x; }); };
   const wins = nm => (nm === 'You' ? 'You win' : nm + ' wins');
+  const shortMoney = n => { const r = Math.round(n) || 0; return r >= 9950 ? '$' + Math.round(r / 1000) + 'k' : r >= 1000 ? '$' + (r / 1000).toFixed(1) + 'k' : money(r); };
   const signed = n => (n > 0.5 ? '+' : '') + money(n);
   const pct = (v, d = 1) => (v * 100).toFixed(d) + '%';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -80,8 +81,9 @@
   }
 
   // ---------------------------------------------------------------- sheet + back button
-  let sheetOpen = false;
-  function openSheet(html) {
+  let sheetOpen = false, sheetKind = '';
+  function openSheet(html, kind) {
+    sheetKind = kind || '';
     $('sheet').innerHTML = html; $('sheet').hidden = false; $('sheetBack').hidden = false;
     if (!sheetOpen) { history.pushState({ sheet: 1 }, ''); sheetOpen = true; }
   }
@@ -108,9 +110,12 @@
     { id: 'odds', label: 'Odds' }, { id: 'table', label: 'Table' }, { id: 'play', label: 'Play', hub: true },
     { id: 'trade', label: 'Trade' }, { id: 'settings', label: 'Settings' },
   ];
+  // replace an element's insides only when they changed: a finger that is mid-tap on a button
+  // while the computers play must not lose its tap because the button was redrawn under it
+  function setHTML(el, html) { if (el._html !== html) { el._html = html; el.innerHTML = html; } }
   function renderTabs() {
-    $('tabsBottom').innerHTML = TABS.map(t => `<button data-tab="${t.id}" class="${t.hub ? 'hub' : ''}" ${S.tab === t.id ? 'aria-current="page"' : ''}>${I[t.id]}<span>${t.label}</span></button>`).join('');
-    $('tabsTop').innerHTML = TABS.map(t => `<button data-tab="${t.id}" ${S.tab === t.id ? 'aria-current="page"' : ''}>${t.label}</button>`).join('');
+    setHTML($('tabsBottom'), TABS.map(t => `<button data-tab="${t.id}" class="${t.hub ? 'hub' : ''}" ${S.tab === t.id ? 'aria-current="page"' : ''}>${I[t.id]}<span>${t.label}</span></button>`).join(''));
+    setHTML($('tabsTop'), TABS.map(t => `<button data-tab="${t.id}" ${S.tab === t.id ? 'aria-current="page"' : ''}>${t.label}</button>`).join(''));
   }
   function goTab(id) {
     if (id === S.tab) return;
@@ -504,7 +509,7 @@
 
   // ================================================================ PLAY
   let G = null; // engine state (S.game)
-  let gen = 0, timer = null, lastDiceKey = '';
+  let gen = 0, timer = null, lastDiceKey = null; // null until the first draw: a reload never tumbles the dice
   const humanSeat = st => {
     const a = Engine.actor(st);
     if (NETS) return a >= 0 && a === NETS.mySeat ? a : -1;
@@ -552,6 +557,7 @@
   }
   const delay = () => ({ fast: 140, normal: 520, slow: 1000 }[S.settings.speed] || 520);
   function setGame(st) {
+    if (st) st.seq = ((G && G.startId === st.startId && G.seq) || 0) + 1; // move counter: lets a second tab tell newer from older
     G = st; S.game = st;
     if (!st) S.hist = null; else track(st, st.startId);
     save();
@@ -621,7 +627,8 @@
   }
   function pump() {
     clearTimeout(timer);
-    if (NETS || !G || G.phase === 'over' || S.tab !== 'play') return;
+    // only the tab you are looking at plays the computers (a hidden or second tab just follows)
+    if (NETS || !G || G.phase === 'over' || S.tab !== 'play' || document.hidden) return;
     const a = Engine.actor(G);
     if (a < 0 || G.players[a].kind !== 'cpu') return;
     const my = ++gen;
@@ -697,16 +704,21 @@
       const st = G, me = humanSeat(st), a = Engine.actor(st);
       const who = a >= 0 ? st.players[a] : null;
       const dk = st.dice ? st.dice.join('') + ':' + st.turns + ':' + st.log.length : '';
-      const anim = st.dice && dk !== lastDiceKey && /rolls/.test(st.log[st.log.length - 1] || '');
+      // no tumble on a reload or when coming back to the tab: only a throw seen live
+      const anim = st.dice && dk !== lastDiceKey && lastDiceKey !== null && /rolls/.test(st.log[st.log.length - 1] || '');
       lastDiceKey = dk;
       let h = '';
       if (st.phase === 'over') {
-        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
+        if (st.tie && st.tie.length > 1) return `<div class="cap">Game over · tie</div><div class="ctitle">${st.tie.map(k => `<span style="color:${COLORS[k]}">${esc(st.players[k].name)}</span>`).join(' &amp; ')}</div><div class="csub">level on worth after ${st.round} round${st.round === 1 ? "" : "s"}</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
+        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} round${st.round === 1 ? "" : "s"}</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
       }
       h += `<div class="cap turn"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
       if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim, dk, 0)}${dieHTML(st.dice[1], anim, dk, 1)}</div>`;
-      if (st.lastCard && st.lastCard.n === st.turns) h += `<div class="cardnote ${st.lastCard.deck}" data-ck="${st.lastCard.deck}:${st.lastCard.n}:${st.lastCard.idx}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
-      if (me < 0) { h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div>`; return h; }
+      const cardUp = st.lastCard && st.lastCard.n === st.turns;
+      // the last log line, unless it only repeats the card lying face up
+      const lastLine = () => { const l = st.log[st.log.length - 1] || ''; return cardUp && / draws: /.test(l) ? '' : `<div class="csub">${esc(say(l))}</div>`; };
+      if (cardUp) h += `<div class="cardnote ${st.lastCard.deck}" data-ck="${st.lastCard.deck}:${st.lastCard.n}:${st.lastCard.idx}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
+      if (me < 0) { h += lastLine(); return h; }
       const p = st.players[me];
       const btn = (act, label, cls, extra) => `<button class="btn ${cls || ''}" data-act="${act}" ${extra || ''}>${label}</button>`;
       if (st.phase === 'roll') {
@@ -724,7 +736,7 @@
       } else if (st.phase === 'trade') {
         h += `<div class="ctitle">${esc(st.players[st.trade.from].name)} offers a trade</div><div class="row">${btn('seeoffer', 'See offer', 'warm')}</div>`;
       } else if (st.phase === 'end') {
-        h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div><div class="row">${btn('g:end', 'End turn', 'primary')}${btn('manage', 'Build')}</div>`;
+        h += `${lastLine()}<div class="row">${btn('g:end', 'End turn', 'primary')}${btn('manage', 'Build')}</div>`;
       }
       return h;
     },
@@ -758,6 +770,7 @@
       return st.players.findIndex(p => p.kind === 'human');
     },
     lastMe: -1,
+    logSheet: () => Play.sidePanel() + '<div class="acts"><button class="btn primary" data-act="close">Close</button></div>',
     seatSub(st, k) {
       const p = st.players[k];
       if (p.out) return 'bankrupt';
@@ -771,12 +784,16 @@
       for (let j = 1; j <= n; j++) { const k = ((me < 0 ? -1 : me) + j + n) % n; if (k !== me) order.push(k); }
       const wide = innerWidth >= 900, land = document.body.classList.contains('land');
       const avail = wide ? SEATS_W - 20 : land ? innerWidth * 0.22 - 20 : Math.max(60, (innerWidth - 16) / order.length - 50);
+      // a crowded strip (5+ opponents on a phone): no bill piles, short amounts ($1.5k), so nothing runs into the next seat
+      const crowd = !wide && !land && order.length >= 5;
+      $('seats').classList.toggle('many', order.length >= 5);
+      const cash = (p, k) => (crowd ? `<b class="short" title="${money(p.cash)}">${shortMoney(p.cash)}</b>` : billsHTML(p.cash, wide ? 3 : 2, wide ? 4 : innerWidth < 380 ? 1 : 2) + `<b data-cash="${k}">${money(p.cash)}</b>`);
       return order.map(k => {
         const p = st.players[k];
         const dw = deedWidth(st, k, avail, wide ? 26 : 16, wide ? 12 : 9);
         return `<div class="seat${k === st.turn && st.phase !== 'over' ? ' turn' : ''}${p.out ? ' out' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};--dw:${dw}px" role="button" aria-label="${esc(p.name)}">
           <div class="plate"><span class="pdot"></span><span class="pn">${esc(p.name)}</span><span class="ps">${Play.seatSub(st, k)}</span></div>
-          <div class="sarea"><span class="sdeeds">${deedsHTML(st, k)}${jailCards(p)}</span><span class="scash">${billsHTML(p.cash, wide ? 3 : 2, wide ? 4 : innerWidth < 380 ? 1 : 2)}<b data-cash="${k}">${money(p.cash)}</b></span></div>
+          <div class="sarea"><span class="sdeeds">${deedsHTML(st, k)}${jailCards(p)}</span><span class="scash">${cash(p, k)}</span></div>
           ${wide ? `<div class="sworth">worth ${money(Money.netWorth(st, k))}</div>` : ''}</div>`;
       }).join('');
     },
@@ -870,7 +887,7 @@
       if (!Play.gt || Play.gt.a !== me) Play.gt = { a: me, b: st.players.findIndex((p, k) => k !== me && !p.out), aGives: [], bGives: [], aCash: 0, bCash: 0 };
       const t = Play.gt;
       openSheet(`<h3>Offer a trade</h3>${tradeBuilder(st, t, 'g')}${tradeView(st, t)}
-        <div class="acts"><button class="btn ghost" data-act="close">Cancel</button><button class="btn warm" data-act="gpropose" ${(st.proposals || 0) >= 3 ? 'disabled' : ''}>Offer</button></div>`);
+        <div class="acts"><button class="btn ghost" data-act="close">Cancel</button><button class="btn warm" data-act="gpropose" ${Engine.offersLeft(st, me) <= 0 ? 'disabled' : ''}>Offer</button></div>`);
     },
     offerSheet() {
       const st = G, tr = st.trade;
@@ -910,7 +927,16 @@
           setGame(ng);
           render(); pump(); return;
         }
-        case 'newgame': closeSheet(); gen++; clearTimeout(timer); setGame(null); render(); return;
+        case 'newgame': {
+          // a game in progress needs a second tap (0.4 to 3 s later), so a stray tap can't throw it away
+          if (G && G.phase !== 'over') {
+            const dt = Date.now() - (Play.armed || 0);
+            if (!(Play.armed && dt > 400 && dt < 3000)) { if (!Play.armed || dt >= 3000) { Play.armed = Date.now(); toast('Tap New game again to end this game.'); } return; }
+          }
+          Play.armed = 0;
+        }
+        // falls through
+        case 'newgameNow': closeSheet(); gen++; clearTimeout(timer); setGame(null); render(); return;
         case 'netcreate': {
           const mine = su.seats.findIndex(x => x.kind === 'human');
           const name = (su.seats[mine >= 0 ? mine : 0].name || 'Player').slice(0, 12);
@@ -945,7 +971,7 @@
         case 'rule': su.rules[d.k] = e.target.checked; break;
         case 'rlimit': su.rules.roundLimit = +d.v; break;
         case 'manage': Play.manageSheet(); return;
-        case 'logsheet': openSheet(Play.sidePanel() + '<div class="acts"><button class="btn primary" data-act="close">Close</button></div>'); return;
+        case 'logsheet': openSheet(Play.logSheet(), 'log'); return;
         case 'gtrade': Play.tradeSheet(); return;
         case 'seeoffer': Play.offerSheet(); return;
         case 'hint': {
@@ -1055,17 +1081,22 @@
     const playing = S.tab === 'play' && !!G && !(netResuming && !NETS);
     if (playing !== document.body.classList.contains('playing') || !render.laid) { document.body.classList.toggle('playing', playing); layout(playing); render.laid = true; }
     $('seats').hidden = !playing; $('mine').hidden = !playing;
-    if (playing) { $('seats').innerHTML = Play.seats(); $('mine').innerHTML = Play.mine(); }
+    if (playing) { setHTML($('seats'), Play.seats()); setHTML($('mine'), Play.mine()); }
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
     drawDecks();
-    $('center').innerHTML = sc.center();
+    const ch = sc.center();
+    if (ch !== render.center) { render.center = ch; render.centerAt = Date.now(); }
+    setHTML($('center'), ch);
+    fitCenter();
     dealCard();
     const keep = $('panel').scrollTop;
     $('panel').innerHTML = sc.panel();
     $('panel').scrollTop = keep;
     if (S.tab === 'settings' && window.FX && $('fxSet')) FX.renderSettings($('fxSet'));
     fxStep();
-    if (S.tab === 'play' && G && G.phase === 'trade' && humanSeat(G) >= 0 && !sheetOpen) Play.offerSheet();
+    // the phone's Log sheet keeps up while computers play
+    if (sheetOpen && sheetKind === 'log') { if (S.tab === 'play' && G) { const sh = $('sheet'), k = sh.scrollTop; sh.innerHTML = Play.logSheet(); sh.scrollTop = k; } else closeSheet(); }
+    if (S.tab === 'play' && G && G.phase === 'trade' && humanSeat(G) >= 0 && (!sheetOpen || sheetKind === 'log')) Play.offerSheet();
   }
   // ---------------------------------------------------------------- sounds + animations (js/fx-game.js)
   // every effect comes from comparing the game before and after, so your moves, computer
@@ -1075,6 +1106,7 @@
     token: k => (BV && BV.tokens['g' + k] ? BV.tokens['g' + k].g : null),
     square: sq => (BV && BV.sqs[sq] ? BV.sqs[sq].grp : null),
     cash: k => document.querySelector(`#seats [data-cash="${k}"], #mine [data-cash="${k}"]`),
+    cashFloat: k => { const b = document.querySelector(`#seats [data-cash="${k}"], #mine [data-cash="${k}"]`); const bl = b && b.parentNode.querySelector('.bills'); return bl && bl.offsetWidth ? bl : null; },
     center: () => $('boardWrap'),
     card: () => document.querySelector('#center .cardnote'),
     turnBtn: () => document.querySelector('#center .btn.warm, #center .btn.primary'),
@@ -1091,7 +1123,7 @@
     const id = NETS ? 'net:' + NETS.code : (G ? G.startId || 'local' : null);
     const prev = fxPrev, same = fxId === id;
     fxPrev = G; fxId = id;
-    if (!G || !prev || !same || prev === G || S.tab !== 'play' || !window.FX || !window.MonoFX) return;
+    if (!G || !prev || !same || prev === G || S.tab !== 'play' || document.hidden || !window.FX || !window.MonoFX) return;
     const mine = k => (NETS ? k === NETS.mySeat : !!(G.players[k] && G.players[k].kind === 'human'));
     try { MonoFX.run(MonoFX.events(prev, G, { mine, f: fxSpeed(), colors: COLORS }), fxDom); } catch (e) { /* effects never break the game */ }
     try { flyDeeds(prev, G); } catch (e) { /* effects never break the game */ }
@@ -1109,6 +1141,22 @@
       if (el.dataset.count === String(n) && el.firstChild) return;
       TABLE.deck(el, n, { pattern: 'plain', cls: 'mback ' + d, badge: false, perCard: 0.45, max: 8 });
     });
+  }
+  // the words and buttons in the middle stay off the two decks: the decks lie on the diagonal,
+  // so their inner long edges run along x + y = ±0.41 board (measured from the middle);
+  // when the middle holds a lot (card + dice + buttons) it shrinks just enough to stay clear
+  function fitCenter() {
+    const c = $('center');
+    c.style.transform = '';
+    if (S.tab !== 'play' || !G || $('deckChance').hidden) return;
+    const wrap = $('boardWrap'), bw = wrap.offsetWidth, r0 = wrap.getBoundingClientRect();
+    if (!bw) return;
+    const mx = r0.left + bw / 2, my = r0.top + bw / 2, lim = 0.385 * bw - 4;
+    let worst = 0;
+    const take = r => { if (!r.width) return; worst = Math.max(worst, r.right - mx + r.bottom - my, mx - r.left + my - r.top); };
+    c.querySelectorAll('.btn, .cardnote, .dice, .help').forEach(e => take(e.getBoundingClientRect()));
+    c.querySelectorAll('.cap, .ctitle, .csub, .big').forEach(e => { const g = document.createRange(); g.selectNodeContents(e); take(g.getBoundingClientRect()); });
+    if (worst > lim) c.style.transform = `scale(${Math.max(0.55, lim / worst).toFixed(3)})`;
   }
   // a drawn card flies off its deck, then turns face up in the middle of the board
   let dealt = '', dealing = '';
@@ -1146,7 +1194,7 @@
     const sc = SCREENS[S.tab];
     G = NETS ? NETS.pub : S.game;
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
-    $('center').innerHTML = sc.center();
+    setHTML($('center'), sc.center());
     if (withResult && S.tab === 'trade') {
       const p = $('panel'), r = p.querySelector('[data-res]');
       if (r) r.innerHTML = tradeView(tableState(), Trade.t());
@@ -1163,6 +1211,9 @@
     const a = el.dataset.act;
     if (a === 'help') { toast(HELP[el.dataset.k] || '', 7000); return; }
     if (a === 'close') { closeSheet(); return; }
+    // a fast double tap must not land on the button that just replaced the one tapped
+    // (Roll -> End turn, Buy -> End turn, Start -> Roll)
+    if (el.closest('#center') && Date.now() - (render.centerAt || 0) < 350) return;
     const sc = SCREENS[S.tab];
     if (sc.act) sc.act(a, el.dataset, e);
   }
@@ -1208,6 +1259,19 @@
       netLoad().then(m => netAttach(m).resume()).then(ok => { netResuming = false; if (!ok) netDrop(''); else render(); }).catch(() => { netResuming = false; netDrop(''); });
     }
   } catch (e) { /* storage blocked */ }
+  // the same game open in two tabs: the one behind takes the newer game when the other saves
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY || NETS || !e.newValue) return;
+    let d; try { d = JSON.parse(e.newValue); } catch (x) { return; }
+    const g = d && d.game, mine = S.game;
+    const newer = g ? (!mine || g.startId !== mine.startId || (g.seq || 0) > (mine.seq || 0)) : !!mine;
+    if (!newer) return;
+    gen++; clearTimeout(timer);
+    S.game = g || null; S.hist = d.hist || null; G = S.game;
+    if (!g) closeSheet();
+    render(); pump();
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
   let rt = null;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { layout(); render(); }, 120); });
   // the trade tab's result block gets the same wrapper so typing cash doesn't redraw inputs

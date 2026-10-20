@@ -203,7 +203,7 @@
     if (j <= st.turn) st.round++;
     st.turn = j; st.turns++;
     st.resume = 'roll';
-    st.lastCard = null; st.proposals = 0;
+    st.lastCard = null; st.proposals = 0; st.offersBy = null;
     if (st.rules.roundLimit && st.round > st.rules.roundLimit) { st.round = st.rules.roundLimit; return finishByWorth(st, `Round limit reached.`); }
     if (st.turns >= st.rules.maxTurns) return finishByWorth(st, `Turn limit reached.`);
     log(st, `${st.players[j].name} to roll.`);
@@ -213,6 +213,9 @@
     let best = -1, bw = -Infinity;
     st.players.forEach((p, i) => { if (!p.out) { const w = Money.netWorth(st, i); if (w > bw) { bw = w; best = i; } } });
     st.winner = best; st.phase = 'over';
+    // the rulebook names no tie-break: players level on worth share the win
+    const tie = st.players.map((p, i) => i).filter(i => !st.players[i].out && Money.netWorth(st, i) === bw);
+    if (tie.length > 1) { st.tie = tie; log(st, `${why} Tie: ${tie.map(i => name(st, i)).join(' and ')} with ${money(bw)} each.`); return; }
     log(st, `${why} ${name(st, best)} wins with ${money(bw)}.`);
   }
 
@@ -320,6 +323,7 @@
     for (let sq = 0; sq < 40; sq++) if (Money.canSell(st, i, sq) || canMortgage(st, i, sq)) return false;
     return true;
   }
+  function offersLeft(st, i) { return 3 - (i === st.turn ? (st.proposals || 0) : ((st.offersBy || {})[i] || 0)); }
   function legal(st, i) {
     const out = [];
     if (st.phase === 'over' || i < 0 || st.players[i].out) return out;
@@ -486,8 +490,10 @@
         return settle(st);
       case 'propose': {
         if (!me || (st.phase !== 'roll' && st.phase !== 'end' && st.phase !== 'debt')) fail('not now');
-        if ((st.proposals || 0) >= 3) fail('three offers per turn');
-        st.proposals = (st.proposals || 0) + 1;
+        // three offers per turn for the turn player, and three for anyone raising cash on that turn
+        if (offersLeft(st, i) <= 0) fail('three offers per turn');
+        if (i === st.turn) st.proposals = (st.proposals || 0) + 1;
+        else { st.offersBy = st.offersBy || {}; st.offersBy[i] = (st.offersBy[i] || 0) + 1; }
         const tr = action.trade; // { to, give:[sq], get:[sq], giveCash, getCash, giveCards, getCards }
         const to = tr.to;
         if (to === i || !st.players[to] || st.players[to].out) fail('bad partner');
@@ -541,6 +547,6 @@
     return v;
   }
 
-  const Engine = { tradeKey, canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
+  const Engine = { offersLeft, tradeKey, canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
   if (node) module.exports = Engine; else root.Engine = Engine;
 })(this);

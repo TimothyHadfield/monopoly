@@ -21,6 +21,15 @@
     35: ['SHORT', 'LINE'], 36: ['CHANCE'], 37: ['PARK', 'PLACE'], 38: ['LUXURY', 'TAX'], 39: ['BOARD-', 'WALK'],
   };
 
+  // phone: the same names, cut to what can be read on a 30 px wide space
+  const PHONE = {
+    1: ['MEDITER-', 'RANEAN'], 3: ['BALTIC'], 5: ['READING'], 6: ['ORIENTAL'], 8: ['VERMONT'], 9: ['CONNEC-', 'TICUT'],
+    11: ['ST.', 'CHARLES'], 12: ['ELECTRIC'], 13: ['STATES'], 14: ['VIRGINIA'], 15: ['PENN. RR'], 16: ['ST.', 'JAMES'],
+    18: ['TENNES-', 'SEE'], 19: ['NEW', 'YORK'], 21: ['KENTUCKY'], 23: ['INDIANA'], 24: ['ILLINOIS'], 25: ['B. & O.'],
+    26: ['ATLANTIC'], 27: ['VENTNOR'], 28: ['WATER'], 29: ['MARVIN', 'GARDENS'], 31: ['PACIFIC'], 32: ['NORTH', 'CAROLINA'],
+    34: ['PENN-', 'SYLVANIA'], 35: ['SHORT', 'LINE'], 37: ['PARK', 'PLACE'], 39: ['BOARD-', 'WALK'],
+  };
+
   // outer rect + which side of the board the space is on
   function geom(i) {
     if (i === 0) return { x: 1000 - C, y: 1000 - C, w: C, h: C, side: 'corner' };
@@ -64,10 +73,11 @@
     const s = SQ[i], t = s.type, g = el('g', { class: 'glyph' }, parent);
     if (t === 'chance') { txt(g, 0, 18, '?', { 'font-size': 56, 'font-weight': 900, fill: i === 7 ? '#d6322b' : i === 22 ? '#2b62c4' : '#ef8a1d', stroke: INK, 'stroke-width': 1.5, class: 'qm' }); }
     else if (t === 'cc') {
-      el('path', { d: 'M-20 -4 Q0 -22 20 -4 Z', fill: '#c98a3a' }, g);
-      el('rect', { x: -20, y: -4, width: 40, height: 22, rx: 2, fill: '#b36f2a' }, g);
-      el('path', { d: 'M-20 4 H20 M-13 -4 V18 M13 -4 V18', stroke: '#e9c25a', 'stroke-width': 3 }, g);
-      el('rect', { x: -4, y: 0, width: 8, height: 8, fill: '#e9c25a' }, g);
+      // a treasure chest: a box with a low lid, metal bands and a lock
+      el('path', { d: 'M-21 -3 V-11 Q0 -19 21 -11 V-3 Z', fill: '#c98a3a', stroke: INK, 'stroke-width': 1.5 }, g);
+      el('rect', { x: -21, y: -3, width: 42, height: 21, rx: 1.5, fill: '#b36f2a', stroke: INK, 'stroke-width': 1.5 }, g);
+      el('path', { d: 'M-13 -15 V18 M13 -15 V18', stroke: '#e9c25a', 'stroke-width': 3 }, g);
+      el('rect', { x: -4.5, y: -6, width: 9, height: 10, rx: 1, fill: '#e9c25a', stroke: INK, 'stroke-width': 1 }, g);
     } else if (t === 'rr') {
       el('path', { d: 'M-24 10 V-6 H2 V-18 H14 V-6 H22 V10 Z M-18 -6 V-15 H-8 V-6 M-30 10 L-24 4', fill: '#2a2a2a' }, g);
       el('rect', { x: -2, y: -26, width: 8, height: 8, fill: '#2a2a2a' }, g);
@@ -141,7 +151,7 @@
       const isCorner = g.side === 'corner';
       const grp = el('g', { class: 'sq', 'data-sq': i, tabindex: -1 }, svg);
       const base = el('rect', { class: 'base', x: g.x, y: g.y, width: g.w, height: g.h }, grp);
-      let band = null, nm = null, price = null, sprice = null, gl = null, om, houses, cx, cy;
+      let band = null, nm = null, price = null, sprice = null, gl = null, om, houses, up = null, map = null, side = null, cx, cy;
       if (isCorner) {
         corner(i, g, grp);
         cx = g.x + C / 2; cy = g.y + C / 2;
@@ -157,18 +167,27 @@
         nm = el('g', { class: 'print' }, loc);
         printLines(nm, lines, W / 2, top + 17, 12.5, W - 8);
         if (!hasBand) {
-          gl = el('g', { transform: `translate(${W / 2} ${s.type === 'chance' ? 72 : lines.length > 1 ? 74 : 66})` }, loc);
+          gl = el('g', { transform: `translate(${W / 2} ${s.type === 'chance' ? 72 : s.price ? 70 : lines.length > 1 ? 74 : 66})` }, loc);
+          if (s.price) grp.classList.add('ru'); // railroads + utilities: name, picture and price all fit on a phone
           glyph(i, gl);
         }
         price = txt(loc, W / 2, C - 14, s.price ? '$' + s.price : s.amount ? 'PAY $' + s.amount : '', { class: 'price' });
-        // phone: names are too small to read, so lots show their price big in the middle instead
-        if (hasBand) { sprice = txt(loc, W / 2, BAND + (C - BAND) / 2 + 10, '$' + s.price, { class: 'sprice' }); }
+        // phone: a short name in bigger type and the price under it (the full print is too small to read)
+        if (s.price) {
+          const pl = PHONE[i] || [s.short.toUpperCase()], ph = el('g', { class: 'pprint' }, loc);
+          const y0 = hasBand ? BAND + 22 : 21;
+          printLines(ph, hasBand ? pl : pl.slice(0, 1), W / 2, y0, 19, W - 8, 'pnm');
+          sprice = txt(loc, W / 2, hasBand ? 104 : 112, '$' + s.price, { class: 'sprice' });
+          sprice.pp = ph;
+        }
         om = el('rect', { class: 'ownmark', visibility: 'hidden', x: 3, y: C - 11, width: W - 6, height: 9 }, loc);
         houses = el('g', { class: 'bldg' }, loc);
+        // buildings stand upright for the player (like real pieces seen from your seat), placed along the band
+        up = el('g', { class: 'bldg up' }, grp); map = f.map; side = g.side;
         [cx, cy] = f.map(W / 2, (top + C) / 2);
       }
       grp.addEventListener('click', () => onTap && onTap(i));
-      sqs.push({ grp, base, band, nm, price, sprice, gl, om, houses, g, cx, cy, isCorner });
+      sqs.push({ grp, base, band, nm, price, sprice, gl, om, houses, up, map, side, g, cx, cy, isCorner });
     }
     // Odds values sit upright on top of everything so they can always be read
     const valLayer = el('g', { class: 'vals' }, svg);
@@ -223,7 +242,7 @@
       q.val.textContent = showVal ? opts.values[i] : '';
       q.val.style.fill = h != null && !opts.heatFn && h <= 0.62 ? '#f4f1ea' : '';
       if (q.price) q.price.style.display = showVal ? 'none' : '';
-      if (q.sprice) q.sprice.style.display = showVal ? 'none' : '';
+      if (q.sprice) { q.sprice.style.display = showVal ? 'none' : ''; q.sprice.pp.style.display = showVal ? 'none' : ''; }
       if (q.gl) q.gl.style.display = showVal ? 'none' : '';
       if (q.isCorner) q.grp.classList.toggle('dimart', showVal);
       q.grp.classList.toggle('sel', opts.selected === i);
@@ -243,16 +262,20 @@
     if (q.hk === key) return;
     q.hk = key;
     q.houses.innerHTML = '';
+    if (q.up) q.up.innerHTML = '';
     if (!q.band) return;
     if (mort) { txt(q.houses, W / 2, BAND / 2 + 6, 'MORT', { 'font-size': small ? 19 : 15, 'font-weight': 900, fill: INK, class: 'mort' }); return; }
-    const hs = small ? 18 : 15, gap = small ? 19.5 : 18.5;
-    const house = (x0, w, fill, dark) => {
-      const yb = BAND / 2 + hs * 0.55, ym = yb - hs * 0.6, yt = ym - hs * 0.5, xm = x0 + w / 2;
-      el('path', { class: 'house', d: `M${x0} ${yb} V${ym} L${xm} ${yt} L${x0 + w} ${ym} V${yb} Z`, fill }, q.houses);
-      el('path', { d: `M${xm} ${yt} L${x0 + w} ${ym} V${yb} H${xm} Z`, fill: dark, opacity: 0.55 }, q.houses);
+    const hs = small ? 18 : 15, gap = small ? 19.5 : 18.5, across = q.side === 'left' || q.side === 'right';
+    // (lx, ly) = a spot on the band in the space's own frame; the piece is drawn upright on the board there
+    const house = (lx, w, h, fill, dark) => {
+      const [bx, by] = q.map(lx, BAND / 2);
+      const x0 = bx - w / 2, yb = by + h * 0.55, ym = yb - h * 0.6, yt = ym - h * 0.5;
+      el('path', { class: 'house', d: `M${x0} ${yb} V${ym} L${bx} ${yt} L${x0 + w} ${ym} V${yb} Z`, fill }, q.up);
+      el('path', { d: `M${bx} ${yt} L${x0 + w} ${ym} V${yb} H${bx} Z`, fill: dark, opacity: 0.55 }, q.up);
     };
-    if (n === 5) { const w = small ? 46 : 40; house(W / 2 - w / 2, w, '#d4352e', '#7a1612'); return; }
-    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; house(W / 2 - hs / 2 + off, hs, '#2e9d4e', '#0f4a22'); }
+    // a hotel on a side column is seen end-on from your seat, so it is drawn narrower
+    if (n === 5) { const w = across ? hs * 1.35 : small ? 46 : 40; house(W / 2, w, hs * (across ? 1.25 : 1), '#d4352e', '#7a1612'); return; }
+    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; house(W / 2 + off, hs, across ? hs * 0.9 : hs, '#2e9d4e', '#0f4a22'); }
   }
 
   function tokenXY(view, pos, slot, count, jail, small) {

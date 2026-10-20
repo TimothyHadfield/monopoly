@@ -221,7 +221,8 @@
         sched(() => {
           const el = dom.cash(e.seat);
           if (!el) return;
-          FX.floatText(el, e.text, e.good ? 'var(--good)' : 'var(--bad)');
+          // the "+$N" rises from the bill piles, not on top of the total it is changing
+          FX.floatText((dom.cashFloat && dom.cashFloat(e.seat)) || el, e.text, e.good ? 'var(--good)' : 'var(--bad)');
           if (FX.settings.animations) { el.textContent = money(e.from); FX.countUp(el, e.from, e.to, { duration: 600, format: money }); }
         }, e.delay || 0);
         return;
