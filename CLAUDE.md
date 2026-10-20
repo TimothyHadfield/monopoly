@@ -12,6 +12,7 @@ Static site, no build. Online rooms use the shared free Firebase module (`js/onl
 - `js/ai.js` computers (easy / medium / hard) + `hint`.
 - `js/mono-online.js` the engine wrapped as the online.js game object (setup/toAct/apply/publicView/privateView/bot/isOver). `js/online.js` = shared module, never edit it here.
 - `js/boardview.js` original SVG board. `js/app.js` the five tabs (Odds, Table, Play, Trade, Settings).
+- `js/fx.js` shared sounds/celebrations/animations (copied unchanged from `Board and Card Games/_fx`; never edit it here). `js/fx-game.js` the Monopoly event → sound/effect map (state diff).
 - `tools/sim.js` strength measurement: `node tools/sim.js 400 hard,medium,medium,medium`.
 
 ## Test

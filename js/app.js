@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.4 · 2026-10-20';
+  const VERSION = 'v1.5 · 2026-10-20';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -594,12 +594,12 @@
     }
     if (NETS) {
       // online: the host's engine is the referee; check here first for a quick message
-      try { Engine.apply(G, action); } catch (e) { toast(esc(e.message)); return; }
+      try { Engine.apply(G, action); } catch (e) { fxError(); toast(esc(e.message)); return; }
       const a = Object.assign({}, action); delete a.seat;
       NET.act(a).then(r => { if (r && r.ok === false) toast(esc(r.message)); });
     } else {
       try { setGame(Engine.apply(G, action)); }
-      catch (e) { toast(esc(e.message)); return; }
+      catch (e) { fxError(); toast(esc(e.message)); return; }
     }
     if (before && before.action && before.action.type !== action.type) {
       const what = { buy: 'buy it', decline: 'not buy it', bid: 'keep bidding', pass: 'pass', payJail: 'pay to leave jail', useCard: 'use the jail card', roll: 'roll for doubles', accept: 'accept', reject: 'turn it down' }[before.action.type] || before.action.type;
@@ -684,7 +684,7 @@
       let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
       st.players.forEach((p, k) => {
         const lots = st.own.filter(o => o.owner === k).length;
-        h += `<div class="rowi tap prow${k === st.turn ? ' turn' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};${p.out ? 'opacity:.4' : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v">${money(p.cash)}<small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
+        h += `<div class="rowi tap prow${k === st.turn ? ' turn' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};${p.out ? 'opacity:.4' : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v"><span class="cash">${money(p.cash)}</span><small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
       });
       if (st.phase === 'over') h += '</div>' + worthChart(S.hist, st) + '<div>';
       h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(say(l))}</div>`).join('')}</div>
@@ -911,6 +911,8 @@
         <div class="sec">Play</div>
         <div class="line"><span class="lbl">Computer speed</span>${seg('speed', [['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']])}</div>
         <div class="line"><span class="lbl">Coach${help('coach')}</span><label class="switch"><input type="checkbox" data-act="coach" ${s.coach ? 'checked' : ''}><span></span></label></div>
+        <div class="sec">Sound &amp; effects</div>
+        <div id="fxSet"></div>
         <div class="sec">How strong are the computers?</div>
         <div id="strength">${STRENGTH}</div>
         <div class="sec">Table data</div>
@@ -949,8 +951,39 @@
     const keep = $('panel').scrollTop;
     $('panel').innerHTML = sc.panel();
     $('panel').scrollTop = keep;
+    if (S.tab === 'settings' && window.FX && $('fxSet')) FX.renderSettings($('fxSet'));
+    fxStep();
     if (S.tab === 'play' && G && G.phase === 'trade' && humanSeat(G) >= 0 && !sheetOpen) Play.offerSheet();
   }
+  // ---------------------------------------------------------------- sounds + animations (js/fx-game.js)
+  // every effect comes from comparing the game before and after, so your moves, computer
+  // moves and online snapshots all sound the same; a reload or a new game starts quiet
+  let fxPrev = null, fxId = null;
+  const fxDom = {
+    token: k => (BV && BV.tokens['g' + k] ? BV.tokens['g' + k].g : null),
+    square: sq => (BV && BV.sqs[sq] ? BV.sqs[sq].grp : null),
+    cash: k => document.querySelector(`#panel .prow[data-k="${k}"] .cash`),
+    center: () => $('boardWrap'),
+    card: () => document.querySelector('#center .cardnote'),
+    turnBtn: () => document.querySelector('#center .btn.warm, #center .btn.primary'),
+    color: k => COLORS[k],
+  };
+  const fxSpeed = () => { const f = window.FX ? FX.settings : null; return !f || !f.animations ? 0 : f.animSpeed === 'fast' ? 0.5 : 1; };
+  function fxApply() {
+    const f = fxSpeed();
+    BoardView.speed = f;
+    document.documentElement.classList.toggle('fx-noanim', f === 0);
+    document.documentElement.classList.toggle('fx-fast', f === 0.5);
+  }
+  function fxStep() {
+    const id = NETS ? 'net:' + NETS.code : (G ? G.startId || 'local' : null);
+    const prev = fxPrev, same = fxId === id;
+    fxPrev = G; fxId = id;
+    if (!G || !prev || !same || prev === G || S.tab !== 'play' || !window.FX || !window.MonoFX) return;
+    const mine = k => (NETS ? k === NETS.mySeat : !!(G.players[k] && G.players[k].kind === 'human'));
+    try { MonoFX.run(MonoFX.events(prev, G, { mine, f: fxSpeed(), colors: COLORS }), fxDom); } catch (e) { /* effects never break the game */ }
+  }
+  function fxError() { if (window.FX) FX.play('error'); }
   // redraw everything except the panel (keeps a focused input and its keyboard)
   function renderLight(withResult) {
     const sc = SCREENS[S.tab];
@@ -1002,6 +1035,8 @@
 
   // ---------------------------------------------------------------- boot
   $('ver').textContent = VERSION;
+  if (window.FX) { FX.init({ game: 'monopoly', accent: '#6ea8fe' }); if (window.MonoFX) MonoFX.defineSounds(FX); FX.onChange(fxApply); }
+  fxApply();
   const h0 = (location.hash || '').slice(1);
   if (TABS.some(t => t.id === h0)) S.tab = h0;
   history.replaceState({ tab: S.tab }, '', '#' + S.tab);

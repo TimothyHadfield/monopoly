@@ -21,3 +21,8 @@
 - **Asked:** "review them again for design improvements especially visually".
 - **Built:** a fresh read-only reviewer ranked 14 problems; fixed: phone lots show prices, owner tint + thicker owner strips, bigger phone houses/tokens with shine + shadow, tokens glide square to square, GO/corner numbers clear of the art, laptop centre text/dice/buttons bigger, one-line player rows on phone with a colour bar for whose turn, 40px small buttons on phone, railroads/utilities aligned with the set table, level row aligned, wider laptop panel.
 - **Verified:** `npm test` 43 pass; phone-view WebKit 393 px + desktop before/after of every tab, a fresh game and a round-17 mid-game save (owners + houses); 0 console errors, no overflow, no page scroll.
+
+## 2026-10-20 · v1.5 sounds, celebrations, animations (builder, manager brief)
+- **Asked:** "add opptional sounds ... win celebrations, and other fun annimations ... everything is customizable in the settings".
+- **Built:** `js/fx.js` (shared, unchanged copy), `js/fx-game.js` (state-diff event map → sounds + effects, custom `hop` and `clank`), Settings > Sound & effects, cash count-up + floats, coin flight for rent, card flip, win/lose confetti; existing token glide + dice tumble now obey Animations/Speed. Sound map in progress.md.
+- **Verified:** `tests/fx.test.js` (failed first: module missing, then wiring missing) + full `npm test` 48 pass; phone-view WebKit 393 px + desktop of Settings, a round-17 roll (card + "+$10" float), win screen (confetti); Animations off = 0 overlays/animations; 0 console errors, no overflow.

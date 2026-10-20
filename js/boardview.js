@@ -200,7 +200,10 @@
   }
 
   // CSS transform (not the SVG attribute) so the browser can glide the piece between squares
+  // Settings > Animations: 1 normal, 0.5 fast, 0 off (pieces jump straight to their square)
+  const speed = () => { const v = root.BoardView && root.BoardView.speed; return v == null ? 1 : v; };
   function place(tk, x, y, ms) {
+    ms = ms * speed();
     tk.g.style.transition = ms ? `transform ${ms}ms cubic-bezier(.3,.7,.4,1)` : 'none';
     tk.g.style.transform = `translate(${x}px, ${y}px)`;
   }
@@ -240,15 +243,16 @@
     const steps = [];
     let p = from;
     const n = (to - from + 40) % 40;
-    if (n === 0 || n > 12) { place(tk, dest[0], dest[1], 320); return; }
+    if (n === 0 || n > 12 || !speed()) { place(tk, dest[0], dest[1], 320); return; }
     for (let k = 0; k < n; k++) { p = (p + 1) % 40; steps.push(p); }
     tk.busy = true; tk.final = dest;
-    const per = Math.max(60, Math.min(120, 1100 / steps.length));
+    const per = Math.max(60, Math.min(120, 1100 / steps.length)) * speed();
     let k = 0;
     const tick = () => {
-      if (k >= steps.length) { tk.busy = false; place(tk, tk.final[0], tk.final[1], per); return; }
+      if (k >= steps.length) { tk.busy = false; tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`; tk.g.style.transform = `translate(${tk.final[0]}px, ${tk.final[1]}px)`; return; }
       const sq = view.sqs[steps[k]];
-      place(tk, sq.cx, sq.cy + (sq.isCorner ? (small ? 38 : 34) : 6), per);
+      tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`;
+      tk.g.style.transform = `translate(${sq.cx}px, ${sq.cy + (sq.isCorner ? (small ? 38 : 34) : 6)}px)`;
       k++;
       setTimeout(tick, per);
     };
