@@ -32,3 +32,9 @@
 - **Built:** board redrawn like the real print (`js/boardview.js`), wood table, seats strip/column with deeds + bills, your area with deeds + bill stacks, real Chance/Chest decks on the board (`TABLE.deck`), dealt + flipped cards, flying deeds, laptop side panel, phone Log sheet; `css/table.css`/`js/table.js` byte copies; `.gitattributes` for the shared copies.
 - **Verified:** `npm test` 48 pass (incl. online) on branch and on main; WebKit 320×568, 393×659, 659×393, 1280×800, 1440 laptop: 0 console errors, no overflow, no page scroll; 60 s scripted play: 19 actions, 3 cards dealt, deeds flew, 0 errors. Before/after shots in the builder scratchpad `table/monopoly/`.
 - **Open:** reviewer sub-agent was blocked by the agent limit (self-review only).
+
+## 2026-10-20 · v1.7 edge pass (builder, manager brief)
+- **Asked:** "making each game perfect especially in scenarios that the game doesn't expect or are a little weird", plus the table-look review (step 0) that never ran in v1.6.
+- **Built:** a read-only reviewer ran; fixed deck overlap (`fitCenter`), phone street names, upright houses, chest glyph, bill text, float from bills. 66 weird scenarios listed (builder scratchpad `edge/monopoly/scenarios.md`), 64 tested, 21 failed, 20 fixed: time-limit tie, per-seat trade offers, double-tap guard, New game confirm tap, lost taps while computers play, dice re-tumble on reload, live Log sheet, two-tab sync + hidden-tab pause, scrolling 8-seat lists, short amounts in a crowded strip.
+- **Verified:** `tests/edge.test.js` (8; tie + offers failed first) and full `npm test` 56 pass on branch and on main; WebKit harness `ui.mjs` 69 checks pass locally and on the live site @ 74a9af3 (320/393/659 landscape/640/1280/1440/1920).
+- **Open:** a computer seat named "You" and online leaving not re-run; the reviewer's bigger redesign ideas are Tim's call (listed under Decisions).
