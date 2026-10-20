@@ -1,0 +1,9 @@
+{
+  "name": "monopoly",
+  "private": true,
+  "description": "Monopoly odds, table companion, trade check and computer play. No build step.",
+  "scripts": {
+    "test": "node --test tests/markov.test.js tests/money.test.js tests/engine.test.js",
+    "sim": "node tools/sim.js"
+  }
+}
