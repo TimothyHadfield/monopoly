@@ -1,6 +1,6 @@
 // Computer players. choose(state, seat) -> { action, why }.
 // easy: buys on a whim, builds late, never trades.
-// medium: buys what it can afford, builds evenly, accepts fair trades.
+// medium: buys what it can afford, builds evenly, offers and accepts fair set-finishing trades.
 // hard: uses the landing odds: buys and bids by value, builds the best payback
 //       first up to 3 houses, keeps a cash cushion sized to the danger ahead,
 //       pays out of jail early but stays in late, and offers trades that finish sets.
@@ -14,7 +14,7 @@
 
   const R = Math.random;
   // knobs for strength experiments (tools/sim.js); the shipped values are the defaults
-  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10 };
+  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false };
   const A = (action, why) => ({ action, why: why || '' });
 
   function unowned(st) { return st.own.filter((o, i) => SQ[i].group && o.owner < 0).length; }
@@ -86,41 +86,67 @@
       const lv = tr.get.reduce((s, i) => s + SQ[i].price, 0) + tr.getCash;
       return A({ type: gv >= lv ? 'accept' : 'reject', seat: me }, 'Face value.');
     }
-    const ok = level === 'hard' ? mine >= theirs && mine > 0 : mine >= theirs - 50 && mine > -50;
+    let ok;
+    if (level === 'hard') {
+      // blocking: a deal that finishes a set for them but none for me needs a clear premium
+      const setsFor = (who, after) => Object.keys(GROUPS).filter(g => g !== 'rr' && g !== 'util' && GROUPS[g].every(i => (after[i] != null ? after[i] : st.own[i].owner) === who)).length;
+      const after = {}; tr.give.forEach(i => { after[i] = tr.to; }); tr.get.forEach(i => { after[i] = tr.from; });
+      const theyGain = setsFor(tr.from, after) > setsFor(tr.from, {}), iGain = setsFor(me, after) > setsFor(me, {});
+      if (theyGain && !iGain) ok = mine > 0 && mine >= theirs + cfg.blockPremium * Math.abs(theirs);
+      else ok = mine > 0 && mine >= theirs - cfg.swapSlack;
+    } else ok = mine >= theirs - 50 && mine > -50;
     return A({ type: ok ? 'accept' : 'reject', seat: me }, ok ? 'Fair or better for me.' : 'Not worth it for me.');
   }
 
-  function findTrade(st, me) {
-    // a set I'm one lot short of, where one opponent holds the missing lot
-    for (const g in GROUPS) {
-      if (g === 'util') continue;
-      const lots = GROUPS[g];
-      const missing = lots.filter(i => st.own[i].owner !== me);
-      if (missing.length !== 1 || lots.length - missing.length < 1) continue;
-      const want = missing[0], o = st.own[want];
-      if (o.owner < 0 || !Money.tradable(st, want) || !Money.tradable(st, lots[0])) continue;
-      const them = o.owner;
-      // what can I give: a lot they need, else something cheap outside my sets
-      const mineLots = st.own.map((x, i) => i).filter(i => st.own[i].owner === me && Money.tradable(st, i) && !lots.includes(i));
-      const theirNeed = mineLots.filter(i => { const gg = GROUPS[SQ[i].group]; return gg.filter(j => st.own[j].owner === them).length === gg.length - 1; });
-      const offers = [];
-      for (const give of [[], ...theirNeed.map(x => [x]), ...mineLots.filter(i => !theirNeed.includes(i)).slice(0, 4).map(x => [x])]) {
-        // cash moves value one-for-one, so evaluate once and solve for the sweetener
-        const ev = Money.evaluateTrade(st, { a: me, b: them, aGives: give, bGives: [want], aCash: 0, bCash: 0 }, { rounds: 10 });
-        const a0 = ev.a.value, b0 = ev.b.value;
-        const need = Math.max(0, (a0 - b0 - 50) / 2, -50 - b0 + 1);
-        const cash = Math.ceil(need / 10) * 10;
-        if (cash > Math.min(st.players[me].cash - 100, 800)) continue;
-        const a1 = a0 - cash, b1 = b0 + cash;
-        if (a1 > 0 && a1 > b1 && b1 >= a1 - 50) offers.push({ give, cash, gain: a1 - b1, them, want });
+  // Look for a set-completing trade with one opponent. Lots go both ways when that
+  // finishes a set for each side; cash then evens the deal out so the fair-trade meter
+  // reads close to fair for both (it never hands the other side a lopsided loss).
+  function findTrade(st, me, level) {
+    level = level || st.players[me].level || 'medium';
+    const P = st.players, n = P.length;
+    const keep = level === 'hard' ? Math.max(100, cushion(st, me) * 0.5) : 150;
+    const recent = (st.declined || []).filter(d => st.turns - d.t < 6 * n).map(d => d.k);
+    const colourGroups = Object.keys(GROUPS).filter(g => g !== 'rr' && g !== 'util');
+    const lotsOf = (who, g) => GROUPS[g].filter(i => st.own[i].owner === who);
+    const okLots = lots => lots.every(i => Money.tradable(st, i));
+    let best = null;
+    for (let them = 0; them < n; them++) {
+      if (them === me || P[them].out) continue;
+      // sets I finish by taking all of their lots in it
+      const gets = [], gives = [[]];
+      for (const g of colourGroups) {
+        const mine = lotsOf(me, g), theirs = lotsOf(them, g), size = GROUPS[g].length;
+        if (mine.length && theirs.length && mine.length + theirs.length === size && okLots(GROUPS[g])) gets.push(theirs);
+        if (mine.length && theirs.length && mine.length + theirs.length === size && okLots(GROUPS[g])) gives.push(mine);
       }
-      if (offers.length) {
-        offers.sort((x, y) => y.gain - x.gain);
-        const b = offers[0];
-        return { to: b.them, give: b.give, get: [b.want], giveCash: b.cash, getCash: 0 };
+      if (!gets.length) continue;
+      // a cheap loose lot can also sweeten the deal
+      const loose = st.own.map((o, i) => i).filter(i => st.own[i].owner === me && Money.tradable(st, i) && !Money.ownsGroup(st, me, SQ[i].group)
+        && !GROUPS[SQ[i].group].some(j => st.own[j].owner >= 0 && st.own[j].owner !== me && st.own[j].owner !== them));
+      for (const x of loose.slice(0, 3)) gives.push([x]);
+      for (const get of gets) {
+        for (const give of gives) {
+          if (give.some(i => SQ[i].group === SQ[get[0]].group)) continue;
+          const key = Engine.tradeKey({ from: me, to: them, give, get });
+          if (recent.includes(key)) continue;
+          const ev = Money.evaluateTrade(st, { a: me, b: them, aGives: give, bGives: get, aCash: 0, bCash: 0 }, { rounds: cfg.rounds });
+          const a0 = ev.a.value, b0 = ev.b.value;
+          if (a0 + b0 <= 0) continue;              // no gain to share
+          // split the gain evenly, in steps of $10
+          // hard keeps a small edge (still inside what the meter calls fair)
+          let cash = Math.round(((a0 - b0) / 2 - (level === 'hard' ? cfg.hardEdge / 2 : 0)) / 10) * 10; // > 0: I pay them; < 0: they pay me
+          if (cash > 0 && cash > P[me].cash - keep) continue;
+          if (cash < 0 && -cash > P[them].cash - 100) cash = -Math.max(0, Math.floor((P[them].cash - 100) / 10) * 10);
+          const a1 = a0 - cash, b1 = b0 + cash;
+          if (a1 <= 0 || b1 < a1 - 50 || b1 < -25) continue;
+          // hard also asks: does this hand the other side more than it hands me?
+          if (level === 'hard' && b1 > a1 + 50) continue;
+          if (!best || a1 > best.a1) best = { a1, to: them, give, get, cash };
+        }
       }
     }
-    return null;
+    if (!best) return null;
+    return { to: best.to, give: best.give, get: best.get, giveCash: Math.max(0, best.cash), getCash: Math.max(0, -best.cash) };
   }
 
   // ---------------------------------------------------------------- main
@@ -140,7 +166,7 @@
       let ok;
       if (level === 'easy') ok = R() < 0.65;
       else if (level === 'medium') ok = p.cash - price >= 50;
-      else ok = p.cash - price >= (unowned(st) > 12 ? 0 : cushion(st, me) * 0.5) || lotValue(st, me, sq) > price * 1.9;
+      else ok = p.cash - price >= (cfg.buyAll || unowned(st) > 12 ? 0 : cushion(st, me) * 0.5) || lotValue(st, me, sq) > price * 1.9;
       return ok ? A({ type: 'buy', seat: me }, `Buy ${SQ[sq].name}: worth about $${Math.round(level === 'hard' ? lotValue(st, me, sq) : price)} to you.`)
         : A({ type: 'decline', seat: me }, 'Keep the cash; it goes to auction.');
     }
@@ -168,6 +194,11 @@
         if (has('useCard') && p.jailTries >= 2) return A({ type: 'useCard', seat: me }, 'Last try: use the card instead of paying.');
         return A({ type: 'roll', seat: me }, 'Board is dangerous: sit in jail and try for doubles.');
       }
+      // trade first: finishing a set is what wins games (once per turn, before building)
+      if (level !== 'easy' && cfg.trade && (ph === 'end' || (level === 'hard' && cfg.hardRollTrade && !p.jail)) && has('propose') && (st.proposals || 0) < (level === 'hard' ? cfg.hardProposals : 1)) {
+        const tr = findTrade(st, me, level);
+        if (tr) return A({ type: 'propose', seat: me, trade: tr }, `Offer a trade for ${SQ[tr.get[0]].name} to finish a set.`);
+      }
       // management
       if (level !== 'easy') {
         const reserve = level === 'hard' ? cushion(st, me) * cfg.reserve : 300;
@@ -179,10 +210,7 @@
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, `Build on ${SQ[pick.sq].name}: pays back in ${Math.max(1, Math.round(pick.payback))} rounds.`);
           const um = leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
           if (um) return A({ ...um, seat: me }, 'Spare cash: pay off a mortgage.');
-          if (cfg.trade && ph === 'end' && has('propose') && (st.proposals || 0) < 1) {
-            const tr = findTrade(st, me);
-            if (tr) return A({ type: 'propose', seat: me, trade: tr }, `Offer a trade for ${SQ[tr.get[0]].name} to finish a set.`);
-          }
+
         } else {
           const pick = builds.sort((a, b) => a.sq - b.sq).find(o => p.cash - o.cost >= reserve);
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, 'Build evenly.');

@@ -10,3 +10,9 @@
 - **Built:** online rooms through the shared `online.js` (`js/mono-online.js` adapter); ideas 9-11 (From-here odds, worth-to-you, net-worth chart); measured strength table in Settings; idea 12 tried and dropped (computer games stall).
 - **QA agent fixes:** unmortgage $1 too high (float), give-up blocked while mortgaging could pay + trading while in debt, cash inputs ("12.75", "-500", "1e5"), "Round 21 of 20", (M) + interest on trade offers, "You pays" wording, "−$0", trade verdict numbers, duplicate hint text, blank/duplicate names, laptop board labels under owner strips and railroad icons, reset double-tap, text selection on fast taps, reconnect flash.
 - **Verified:** `npm test` 40 pass (new tests seen failing on the old code first); two-browser online run against the real Firebase project (cash matched, reload resumed, leaver became a computer); phone-view 393 px + desktop screenshots, 0 console errors, no overflow.
+
+## 2026-10-20 · v1.3 computer trades (same builder, manager brief)
+- **Asked:** "make computers trade to complete colour sets, so games finish"; Medium/Hard propose and accept fair set-completing trades, Hard values blocking, humans get offers in Play.
+- **Built:** `AI.findTrade` (2-way swaps and cash-balanced deals judged by the fair meter), Hard blocking premium, declined offers remembered (`Engine.tradeKey`), `tests/finish.test.js`.
+- **Verified:** finish test failed on v1.2 (25/40 safety stops) and passes now (0/40, median 169 turns); 1000-game sims re-run (0/1000 stops for 4×Medium); offer screen phone-view 393 px + desktop.
+- **Open:** Hard's edge over Medium is now small (32% vs 25% fair).

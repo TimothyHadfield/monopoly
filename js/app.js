@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.2 · 2026-10-19';
+  const VERSION = 'v1.3 · 2026-10-20';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -932,10 +932,10 @@
   // measured in tools/sim.js; numbers filled in from progress.md
   const STRENGTH = `<p class="csub" style="margin:2px 2px 8px">Win rate over 1,000 computer-only games each (a fair share is 25% at a 4-seat table, 50% one-on-one).</p>
     <table class="t"><tr><th>Table</th><th>Win rate</th></tr>
-    <tr><td>Hard vs 3 Medium</td><td>Hard 60%</td></tr>
-    <tr><td>Medium vs 3 Easy</td><td>Medium 81%</td></tr>
-    <tr><td>Hard, Medium, 2 Easy</td><td>71% · 24% · 3% each</td></tr>
-    <tr><td>Hard vs Easy, 2 seats</td><td>Hard 63%</td></tr></table>`;
+    <tr><td>Hard vs 3 Medium</td><td>Hard 32%</td></tr>
+    <tr><td>Medium vs 3 Easy</td><td>Medium 78%</td></tr>
+    <tr><td>Hard, Medium, 2 Easy</td><td>59% · 31% · 5% each</td></tr>
+    <tr><td>Hard vs Easy, 2 seats</td><td>Hard 64%</td></tr></table>`;
 
   const SCREENS = { odds: Odds, table: Table, trade: Trade, play: Play, settings: Settings };
 

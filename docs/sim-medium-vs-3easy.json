@@ -1,18 +1,18 @@
 {
  "games": 1000,
- "avgTurns": 1716,
- "endedByLimit": 379,
+ "avgTurns": 236,
+ "endedByLimit": 4,
  "levels": {
   "medium": {
    "seats": 1000,
-   "wins": 807,
-   "winRatePerSeat": 0.807
+   "wins": 778,
+   "winRatePerSeat": 0.778
   },
   "easy": {
    "seats": 3000,
-   "wins": 193,
-   "winRatePerSeat": 0.06433333333333334
+   "wins": 222,
+   "winRatePerSeat": 0.074
   }
  },
- "seconds": 818.756
+ "seconds": 256.085
 }

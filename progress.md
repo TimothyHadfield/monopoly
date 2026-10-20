@@ -2,7 +2,7 @@
 
 ## START HERE
 Read order: this file → `CLAUDE.md` → `docs/rules-check.md` → `docs/ideas.md` → `chat.md`.
-Last updated: 2026-10-20 (v1.2: online rooms, ideas 9-11, QA fixes).
+Last updated: 2026-10-20 (v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
 
 ## Goal right now
 A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap), a real-table money companion, a trade evaluator, and full rules-exact games against measured computers, with online seats once the shared module exists.
@@ -24,11 +24,12 @@ A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap),
 1,000 computer-only games per table, seats rotated, `tools/sim.js`, AI `reserve: 0.5` (raw JSON in `docs/sim-*.json`). Fair share: 25% at 4 seats, 50% at 2.
 | Table | Result |
 |---|---|
-| Hard vs 3 Medium | Hard 59.6% |
-| Medium vs 3 Easy | Medium 80.7% |
-| Hard, Medium, 2 Easy | 71.1% / 23.9% / 2.5% each |
-| Hard vs Easy, 2 seats | Hard 62.5% (1-v-1 is luck-heavy) |
-About a third of the near-equal 4-computer games hit the 4,000-turn safety stop (richest wins).
+| Hard vs 3 Medium | Hard 32.1% |
+| Medium vs 3 Easy | Medium 77.8% |
+| Hard, Medium, 2 Easy | 59.1% / 31.2% / 4.9% each |
+| Hard vs Easy, 2 seats | Hard 63.7% (1-v-1 is luck-heavy) |
+| 4 Medium | 0 of 1000 hit the safety stop, avg 184 turns |
+v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60% of 4×Medium games hit the 4,000-turn safety stop; now 0/1000 (11 of 4000 across the other tables). Hard's lead over Medium shrank (was 59.6%) because Medium trades too; ~12 knob experiments (block premium, cash edge, reserve, house cap, extra offers) all landed at 30-32%.
 
 ## Authorized next steps
 - 2026-10-19 manager brief (phase 1 + phase 2): build all of the above, ideas doc + build the good ones, online when `Board and Card Games/_online/README.md` exists.
@@ -62,11 +63,13 @@ About a third of the near-equal 4-computer games hit the 4,000-turn safety stop 
 - Default tab Odds; Play is the centre tab.
 - Giving up is allowed only when cash + everything sellable/mortgageable can't cover the debt (or nothing can be sold right now). A debtor may offer trades.
 - Mortgage money uses integer math: interest = ceil(price/20), unmortgage = price/2 + ceil(price/20).
+- Computer trades (v1.3): Medium/Hard offer set-completing trades at end of turn (1 per turn), cash-balanced to the fair meter (never worse than -$50 for the other side); a declined offer isn't repeated for 6 rounds. Hard won't sell a lot that finishes someone else's set without a 25% premium. Easy never trades.
 - Online: privateView is empty (nothing secret but the seed and deck order, which publicView hides). The room creator's browser runs the engine and the computers.
 
 ## NOT verified
 - House shortage auction (two players wanting the last houses) is not modelled: first come, first served.
 - The trade value formula is a reasoned model, not checked against expert trade data.
 - Online with 3+ people on real phones (tested: two headless browsers, WebKit 393 px + Chromium laptop, 70 moves, reload, leave).
-- Games between near-equal computers often run long: about 1/3 of 4-computer games hit the 4,000-turn safety stop, so a rule-impact table (idea 12) was dropped.
+- Rule-impact table (idea 12) was dropped when computer games stalled; now they finish (v1.3), so it could be revisited.
+- Hard beats Medium only modestly (32% vs fair 25%) since v1.3.
 - Lobby shows a just-joined friend as offline for a few seconds (presence heartbeat lag).

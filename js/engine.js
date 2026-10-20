@@ -311,6 +311,8 @@
 
   // Every action the seat may take now (types only, plus targets for management).
   // official rule: you are bankrupt only when selling buildings and mortgaging still can't cover what you owe
+  // same lots between the same two players = same offer (cash may differ)
+  const tradeKey = tr => `${tr.from}>${tr.to}:${tr.give.slice().sort((x, y) => x - y).join(',')}|${tr.get.slice().sort((x, y) => x - y).join(',')}`;
   function owed(st, i) { return st.debts.filter(d => d.who === i).reduce((a, d) => a + d.amount, 0); }
   function canGiveUp(st, i) {
     if (st.players[i].cash + Money.liquidValue(st, i) < owed(st, i)) return true;
@@ -505,7 +507,13 @@
         if (st.phase !== 'trade') fail('not now');
         const tr = st.trade; st.trade = null;
         const A = st.players[tr.from], Bp = st.players[tr.to];
-        if (t === 'reject') { log(st, `${Bp.name} turns the trade down.`); return settle(st); }
+        if (t === 'reject') {
+          // remembered for a few rounds so computers don't repeat the same offer every turn
+          const key = tradeKey(tr);
+          st.declined = (st.declined || []).filter(d => st.turns - d.t < 12 * st.players.length && d.k !== key);
+          st.declined.push({ k: key, t: st.turns });
+          log(st, `${Bp.name} turns the trade down.`); return settle(st);
+        }
         // re-check: things may not have changed, but stay safe
         if (tr.give.some(sq => !isMine(st, tr.from, sq)) || tr.get.some(sq => !isMine(st, tr.to, sq)) || A.cash < tr.giveCash || Bp.cash < tr.getCash) fail('trade no longer valid');
         tr.give.forEach(sq => { st.own[sq].owner = tr.to; });
@@ -533,6 +541,6 @@
     return v;
   }
 
-  const Engine = { canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
+  const Engine = { tradeKey, canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
   if (node) module.exports = Engine; else root.Engine = Engine;
 })(this);
