@@ -71,27 +71,50 @@ main { min-height: 0; display: flex; flex-direction: column; align-items: center
 }
 .prow.turn { box-shadow: inset 3px 0 0 var(--pc), 0 0 0 1px var(--pc); }
 
-/* ---------- board ---------- */
-.sq rect.base { fill: var(--sq); stroke: var(--sq-line); stroke-width: 2; }
+/* ---------- board: the real board's mint paper, black rules, printed caps ---------- */
+.board-wrap { border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,.55), 0 3px 0 #b8c9b8, 0 4px 0 rgba(0,0,0,.45), 0 14px 30px rgba(0,0,0,.55); }
+.board-paper { fill: #d3e7d3; }
+.sq rect.base { fill: #d3e7d3; stroke: #17201a; stroke-width: 2; }
+.sq .band { stroke: #17201a; stroke-width: 2; }
 .sq { cursor: pointer; }
-.sq.sel rect.base { stroke: var(--accent); stroke-width: 6; }
-.sq text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; text-anchor: middle; fill: var(--text); pointer-events: none; }
-.sq .nm { font-size: 13.5px; font-weight: 600; fill: #c9cedd; }
-.sq .val { font-size: 23px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.sq .price { font-size: 13px; fill: var(--muted); }
-.board-small .sq .nm, .board-small .sq .price { display: none; }
-.board-small .sq .val { font-size: 25px; }
-.sq .sprice { display: none; font-size: 25px; font-weight: 650; fill: #b9bfd0; font-variant-numeric: tabular-nums; }
+.sq.sel rect.base { stroke: #e0413a; stroke-width: 7; }
+.sq text, .vals text { font-family: "Arial Narrow", "Helvetica Neue", Arial, system-ui, sans-serif; text-anchor: middle; fill: #17201a; pointer-events: none; }
+.sq .nm { font-weight: 700; letter-spacing: .02em; }
+.sq.inv .nm, .sq.inv .price, .sq.inv .sprice { fill: #e8eaf0; }
+.vals .val { font-size: 23px; font-weight: 800; font-variant-numeric: tabular-nums; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.sq .price { font-size: 13px; font-weight: 700; }
+.board-small .sq .print, .board-small .sq .price { display: none; }
+.board-small .vals .val { font-size: 25px; }
+.sq .sprice { display: none; font-size: 25px; font-weight: 800; font-variant-numeric: tabular-nums; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 .board-small .sq .sprice { display: inline; }
-.sq .glyph { fill: none; stroke: #8f97ad; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
-.board-felt { fill: #131722; stroke: var(--sq-line); stroke-width: 2; }
-.token { filter: drop-shadow(0 3px 2px rgba(0,0,0,.55)); }
-.token circle { stroke: #0f1117; stroke-width: 4; }
-.token circle.shine { fill: #fff; opacity: .38; stroke: none; }
-.token.turn circle:first-child { stroke: #fff; stroke-width: 5; }
-.board-small .token.turn circle:first-child { stroke-width: 6; }
-.house { stroke: #0f1117; stroke-width: 2; }
-.ownmark { stroke: #0f1117; stroke-width: 2; }
+.board-small .sq .glyph { transform: scale(1.25); }
+.board-felt { fill: #d3e7d3; stroke: #17201a; stroke-width: 2.5; }
+/* pewter playing pieces on a base in the player's colour */
+.token .pewter { fill: url(#pewter); stroke: #3f454d; stroke-width: 1.4; stroke-linejoin: round; }
+.token .base { stroke: rgba(0,0,0,.6); stroke-width: 1.5; }
+.token .shadow { fill: rgba(0,0,0,.35); }
+.token { filter: drop-shadow(1px 2px 1.5px rgba(0,0,0,.45)); }
+.token.turn .base { stroke: #fff; stroke-width: 3; }
+.house { stroke: #0b1f10; stroke-width: 1.6; stroke-linejoin: round; }
+.ownmark { stroke: #17201a; stroke-width: 1.5; }
+.sq .mort { letter-spacing: .08em; }
+
+/* Chance + Community Chest decks lying on their places in the middle of the board */
+.mdeck { position: absolute; --card-w: calc(var(--bw, 360px) * .175); --ratio: 3.5 / 2.2; pointer-events: none; z-index: 0; translate: -50% -50%; }
+.mdeck.chest { left: 25.5%; top: 25.5%; rotate: 135deg; }
+.mdeck.chance { left: 74.5%; top: 74.5%; rotate: -45deg; }
+.mdeck .tbl-back { --back-frame: #fbf6e8; }
+.mback.chance { --back: #ef8a2a; }
+.mback.chest { --back: #f2cf3e; }
+.mback.chance::before { content: "?"; position: absolute; inset: 0; display: grid; place-items: center; font: 900 calc(var(--card-w) * .42)/1 Georgia, serif; color: #fff4e2; text-shadow: 0 1px 0 #a24f07; }
+.mback.chest::before { content: ""; position: absolute; inset: 22% 32%; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-22 -24 44 44'%3E%3Cpath d='M-20 -4 Q0 -22 20 -4 Z' fill='%23a8641f'/%3E%3Crect x='-20' y='-4' width='40' height='22' rx='2' fill='%2392521a'/%3E%3Cpath d='M-20 4 H20 M-13 -4 V18 M13 -4 V18' stroke='%23fff0b0' stroke-width='3'/%3E%3C/svg%3E") center / contain no-repeat; }
+.center { z-index: 1; color: #17201a; }
+.center .cap, .center .csub { color: #3d4a40; }
+.center .cap.turn { color: #17201a; }
+.center .big, .center .cap span, .center .ctitle[style] { text-shadow: 0 1px 0 rgba(0,0,0,.6), 0 0 1px rgba(0,0,0,.9), 0 0 6px rgba(255,255,255,.4); }
+.center .help { background: #eef6ee; border-color: #8aa58f; color: #3d4a40; }
+.center .btn:not(.warm):not(.primary) { background: #fbfaf5; border-color: #8aa58f; color: #17201a; }
+.center .btn.danger { color: #b3261e; border-color: #c98a86; }
 
 /* ---------- center content ---------- */
 .big { font-size: clamp(28px, 9vw, 52px); font-weight: 800; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
@@ -186,23 +209,106 @@ table.t tr.tap { cursor: pointer; }
 .toast { position: fixed; left: 50%; bottom: calc(var(--tabh) + 14px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: #262c3d; border: 1px solid var(--line); padding: 10px 16px; border-radius: 12px; z-index: 30; font-size: 14px; max-width: 92vw; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 @media (min-width: 900px) { .toast { bottom: 24px; } }
 
-/* dice */
-.dice { display: flex; gap: 8px; justify-content: center; margin: 4px 0; }
-.die { width: 34px; height: 34px; border-radius: 8px; background: #f4f1ea; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 5px; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
-.die i { width: 6px; height: 6px; border-radius: 50%; background: #16181f; place-self: center; visibility: hidden; }
-.die i.on { visibility: visible; }
-.die.roll { animation: roll .45s ease-out; }
-@keyframes roll { 0% { transform: rotate(-90deg) scale(.7); } 60% { transform: rotate(12deg) scale(1.08); } 100% { transform: none; } }
-@media (min-width: 900px) { .dice { gap: 12px; margin: 8px 0; } .die { width: 64px; height: 64px; padding: 10px; border-radius: 12px; } .die i { width: 11px; height: 11px; } .cardnote { font-size: 15px; padding: 9px 14px; } .cardnote b { font-size: 11px; } }
-.cardnote { background: #f4f1ea; color: #16181f; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; font-weight: 600; max-width: 90%; margin: 4px auto; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
-.cardnote b { display: block; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #8a5a00; }
-.cardnote.chest b { color: #1f5fa8; }
-@media (prefers-reduced-motion: reduce) { .token { transition: none; } .die.roll, .sheet { animation: none; } }
+/* dice: real white dice thrown onto the board, each at its own angle */
+.dice { display: flex; gap: 10px; justify-content: center; margin: 4px 0; }
+.mdie { --die-size: 34px; transform: translate(var(--jx), var(--jy)) rotate(var(--jr)); }
+.mdie.roll { animation: roll .5s cubic-bezier(.2,.7,.3,1); }
+@keyframes roll { 0% { transform: translate(-30px, 70px) rotate(-260deg) scale(.85); } 55% { transform: translate(4px, -6px) rotate(calc(var(--jr) + 20deg)) scale(1.06); } 80% { transform: translate(var(--jx), calc(var(--jy) - 3px)) rotate(var(--jr)); } 100% { transform: translate(var(--jx), var(--jy)) rotate(var(--jr)); } }
+@media (min-width: 900px) { .dice { gap: 16px; margin: 8px 0; } .mdie { --die-size: 60px; } .cardnote { font-size: 15px; padding: 10px 16px 12px; } .cardnote b { font-size: 12px; } }
+/* a drawn Chance / Community Chest card, face up in the middle */
+.cardnote { position: relative; background: #fcd9a8; color: #2a1a08; border-radius: 6px; padding: 6px 12px 8px; font: 600 12.5px/1.3 Georgia, "Times New Roman", serif; max-width: 88%; margin: 4px auto; border: 1px solid rgba(0,0,0,.35); box-shadow: inset 0 0 0 3px #fff7ea, inset 0 0 0 4px rgba(0,0,0,.18), 0 1px 1px rgba(0,0,0,.3), 0 6px 14px rgba(0,0,0,.35); rotate: -1.5deg; }
+.cardnote.chest { background: #f9e79a; }
+.cardnote b { display: block; font: 800 10px/1.4 system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #a24f07; }
+.cardnote.chest b { color: #1f4f9a; }
+.cardnote.flipin { animation: flipin .42s cubic-bezier(.3,.7,.3,1); }
+@keyframes flipin { from { transform: perspective(500px) rotateY(90deg); } to { transform: perspective(500px) rotateY(0); } }
+@media (prefers-reduced-motion: reduce) { .token { transition: none; } .mdie.roll, .sheet, .cardnote.flipin { animation: none; } }
+
+/* ---------- the table during a game: seats, your area, side panel ---------- */
+.seats, .mine { width: 100%; flex: none; }
+.seats { display: flex; gap: 6px; height: 54px; }
+.seat { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 3px 4px; border-radius: 8px; cursor: pointer; background: rgba(0,0,0,.16); box-shadow: inset 0 0 0 1px rgba(255,255,255,.06); }
+.seat.turn { box-shadow: inset 0 0 0 2px var(--pc), 0 0 12px rgba(255,220,150,.18); }
+.seat.out { opacity: .4; }
+.plate { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font: 700 12px/18px system-ui, sans-serif; color: #f6efdc; white-space: nowrap; overflow: hidden; }
+.plate .pn { overflow: hidden; text-overflow: ellipsis; }
+.plate .ps { color: rgba(246,239,220,.6); font-weight: 600; font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; }
+.pdot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.6), transparent 55%), var(--pc); box-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.sarea { display: flex; align-items: flex-end; gap: 4px; min-width: 0; flex: 1; }
+.sdeeds { display: flex; gap: 2px; align-items: flex-end; min-width: 0; overflow: hidden; flex: 1; }
+.scash { display: flex; align-items: center; gap: 3px; flex: none; }
+.scash b, .mcash b { font: 800 12px/1 system-ui, sans-serif; color: #f6efdc; font-variant-numeric: tabular-nums; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.sworth { font-size: 11px; color: rgba(246,239,220,.6); }
+.seats .bills { --bw2: 22px; }
+
+/* paper money, sorted in stacks by note */
+.bills { --bw2: 44px; display: inline-flex; gap: 3px; align-items: flex-end; }
+.bstack { position: relative; width: var(--bw2); height: calc(var(--bw2) * .53 + (var(--n) - 1) * 2px); flex: none; }
+.bill { position: absolute; left: calc(var(--i) * 1px); bottom: calc(var(--i) * 2px); width: 100%; height: calc(var(--bw2) * .53); box-sizing: border-box; border-radius: 2px; background: var(--bc); border: 1px solid rgba(0,0,0,.28); box-shadow: inset 0 0 0 2px rgba(255,255,255,.5), inset 0 0 0 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.35); display: grid; place-items: center; rotate: calc((var(--i) - 1) * 1.2deg); }
+.bill b { font: 800 calc(var(--bw2) * .26)/1 Georgia, serif; color: rgba(40,30,15,.75); }
+.seats .bill b { display: none; }
+
+/* title deeds: colour band at the top, rent lines under it; sets overlap like real holdings */
+.dset { display: inline-flex; flex: none; }
+.dset + .dset { margin-left: calc(var(--dw) * .12); }
+.dset > .deed + .deed { margin-left: calc(var(--dw) * -.66); }
+.deed { position: relative; flex: none; width: var(--dw); aspect-ratio: 5 / 6; box-sizing: border-box; border-radius: 2px; background: #fbf9f2; border: 1px solid rgba(0,0,0,.35); box-shadow: 0 1px 2px rgba(0,0,0,.4); display: flex; flex-direction: column; align-items: stretch; padding: calc(var(--dw) * .07); gap: calc(var(--dw) * .05); overflow: hidden; }
+.deed em { display: block; height: 30%; background: var(--dc); border: 1px solid rgba(0,0,0,.4); font: 800 calc(var(--dw) * .17)/1 system-ui, sans-serif; color: #111; font-style: normal; text-align: center; overflow: hidden; white-space: nowrap; padding-top: calc(var(--dw) * .04); text-transform: uppercase; }
+.deed.rr em, .deed.util em { background: #fff; }
+.deed u { display: block; height: 1px; margin: 0 8%; background: rgba(0,0,0,.25); }
+.deed.back { background: #f6efe0; justify-content: center; align-items: center; }
+.deed.back i { font: 900 calc(var(--dw) * .4)/1 Georgia, serif; color: #c0312a; font-style: normal; }
+.deed.flying { --dw: 40px; }
+.seats .deed em { font-size: 0; }
+.jcard { flex: none; width: calc(var(--dw) * 1.2); aspect-ratio: 3.5 / 2.2; border-radius: 2px; background: #ef8a2a; border: 1px solid rgba(0,0,0,.35); box-shadow: inset 0 0 0 2px #fbf6e8, 0 1px 2px rgba(0,0,0,.4); margin-left: 4px; align-self: flex-end; }
+.jcard.chest { background: #f2cf3e; }
+
+/* your own area at the bottom edge */
+.mine { display: flex; flex-direction: column; gap: 6px; height: 104px; }
+.mrow { flex: 1; min-height: 0; display: flex; align-items: flex-end; gap: 10px; padding: 0 2px; }
+.mdeeds { flex: 1; min-width: 0; display: flex; align-items: flex-end; overflow: hidden; cursor: pointer; padding-bottom: 2px; }
+.dspot { --card-w: 34px; --ratio: 5 / 6; }
+.mcash { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.mcash .bills { --bw2: 30px; flex-wrap: wrap; justify-content: flex-end; max-width: 140px; }
+.mcash b { font-size: 15px; }
+.mbar { display: flex; align-items: center; gap: 6px; flex: none; }
+.mbar .grow { flex: 1; }
+.mbar .plate { padding: 0 8px; border-radius: 4px; height: 26px; background: linear-gradient(#3b2a1a, #24180d); border: 1px solid #7a5a2e; }
+.mbar .plate.turn { border-color: var(--pc); box-shadow: 0 0 0 2px var(--pc); }
+.mbar .btn.small { background: rgba(20,22,30,.82); }
+.playing .panel-col { display: none; }
+
+@media (min-width: 900px) {
+  .playing main { display: grid; grid-template-columns: 210px auto 290px; grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "seats board side" "seats mine side"; justify-content: center; align-items: start; column-gap: 18px; row-gap: 10px; }
+  .playing .seats { grid-area: seats; flex-direction: column; height: auto; gap: 10px; }
+  .playing .seat { flex: none; padding: 8px 10px; gap: 6px; }
+  .playing .seat .sarea { flex-direction: column; align-items: flex-start; gap: 6px; }
+  .playing .seat .sdeeds { flex-wrap: wrap; row-gap: 4px; }
+  .playing .seats .bills { --bw2: 30px; }
+  .playing .plate { font-size: 13.5px; }
+  .playing .board-col { grid-area: board; }
+  .playing .mine { grid-area: mine; height: 128px; width: auto; }
+  .playing .mcash .bills { --bw2: 40px; max-width: 220px; }
+  .playing .mcash b { font-size: 17px; }
+  .playing .panel-col { display: block; grid-area: side; grid-row: 1 / span 2; align-self: stretch; max-width: none; min-height: 0; background: rgba(12,14,20,.78); border-radius: 12px; padding: 10px 12px 16px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+}
+/* phone held sideways: seats | board | your area side by side */
+@media (max-width: 899px) {
+  .playing.land main { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1.35fr); grid-template-areas: "seats board mine"; align-items: start; column-gap: 8px; padding-top: 6px; }
+  .playing.land .seats { grid-area: seats; flex-direction: column; height: auto; }
+  .playing.land .seat { flex: none; }
+  .playing.land .board-col { grid-area: board; }
+  .playing.land .mine { grid-area: mine; height: 100%; padding-bottom: 6px; }
+  .playing.land .mbar { flex-wrap: wrap; }
+}
 .sec + .line, .ph + .line { border-top: 0; }
 /* fast taps on buttons and the board must not select text or zoom on iPhone */
 .btn, .seg button, .chip, #center, #board, .tabs { -webkit-user-select: none; user-select: none; touch-action: manipulation; -webkit-touch-callout: none; }
 /* Settings > Sound & effects: Animations off / Fast (js/fx-game.js); squares pop from their own centre */
 .sq { transform-box: fill-box; transform-origin: center; }
-.fx-noanim .die.roll, .fx-noanim .sheet, .fx-noanim .toast { animation: none; }
+.fx-noanim .mdie.roll, .fx-noanim .sheet, .fx-noanim .toast, .fx-noanim .cardnote.flipin { animation: none; }
 .fx-noanim .token { transition: none !important; }
-.fx-fast .die.roll { animation-duration: .22s; }
+.fx-fast .mdie.roll { animation-duration: .25s; }
+.fx-fast .cardnote.flipin { animation-duration: .22s; }
+/* Odds numbers on a corner: the corner's printing fades back so the number reads */
+.sq.dimart > :not(.base) { opacity: .25; }

@@ -1,12 +1,27 @@
 // The board, drawn as original SVG (no publisher art). 1000 x 1000 units,
-// Go bottom-right, Jail bottom-left, like the real board.
+// laid out like the real board: Go bottom-right, Jail bottom-left, pale mint paper,
+// colour bands facing the middle, and every side printed to face the player who sits there
+// (bottom row upright, left column turned a quarter, top row upside down, right column the other way).
 (function (root) {
   'use strict';
   const { SQ, GROUP_COLOR } = root.Board;
   const NS = 'http://www.w3.org/2000/svg';
-  const C = 136, W = (1000 - 2 * C) / 9, BAND = 24;
+  const C = 136, W = (1000 - 2 * C) / 9, BAND = 26;
+  const MINT = '#d3e7d3', INK = '#17201a';
 
-  // outer rect + which side the colour band sits on (the side facing the middle)
+  // the words printed on each space, line by line (as on the real board)
+  const PRINT = {
+    1: ['MEDITER-', 'RANEAN', 'AVENUE'], 2: ['COMMUNITY', 'CHEST'], 3: ['BALTIC', 'AVENUE'], 4: ['INCOME', 'TAX'],
+    5: ['READING', 'RAILROAD'], 6: ['ORIENTAL', 'AVENUE'], 7: ['CHANCE'], 8: ['VERMONT', 'AVENUE'], 9: ['CONNECTICUT', 'AVENUE'],
+    11: ['ST. CHARLES', 'PLACE'], 12: ['ELECTRIC', 'COMPANY'], 13: ['STATES', 'AVENUE'], 14: ['VIRGINIA', 'AVENUE'],
+    15: ['PENNSYLVANIA', 'RAILROAD'], 16: ['ST. JAMES', 'PLACE'], 17: ['COMMUNITY', 'CHEST'], 18: ['TENNESSEE', 'AVENUE'], 19: ['NEW YORK', 'AVENUE'],
+    21: ['KENTUCKY', 'AVENUE'], 22: ['CHANCE'], 23: ['INDIANA', 'AVENUE'], 24: ['ILLINOIS', 'AVENUE'], 25: ['B. & O.', 'RAILROAD'],
+    26: ['ATLANTIC', 'AVENUE'], 27: ['VENTNOR', 'AVENUE'], 28: ['WATER', 'WORKS'], 29: ['MARVIN', 'GARDENS'],
+    31: ['PACIFIC', 'AVENUE'], 32: ['NORTH', 'CAROLINA', 'AVENUE'], 33: ['COMMUNITY', 'CHEST'], 34: ['PENNSYLVANIA', 'AVENUE'],
+    35: ['SHORT', 'LINE'], 36: ['CHANCE'], 37: ['PARK', 'PLACE'], 38: ['LUXURY', 'TAX'], 39: ['BOARD-', 'WALK'],
+  };
+
+  // outer rect + which side of the board the space is on
   function geom(i) {
     if (i === 0) return { x: 1000 - C, y: 1000 - C, w: C, h: C, side: 'corner' };
     if (i < 10) return { x: 1000 - C - i * W, y: 1000 - C, w: W, h: C, side: 'bottom' };
@@ -17,25 +32,16 @@
     if (i === 30) return { x: 1000 - C, y: 0, w: C, h: C, side: 'corner' };
     return { x: 1000 - C, y: C + (i - 31) * W, w: C, h: W, side: 'right' };
   }
-  function bandRect(g) {
+  // each side space is drawn upright in a W x C local frame (band at the top = towards the middle,
+  // price at the bottom = the outer edge), then turned to face its side
+  function frame(g) {
     switch (g.side) {
-      case 'bottom': return { x: g.x, y: g.y, w: g.w, h: BAND };
-      case 'top': return { x: g.x, y: g.y + g.h - BAND, w: g.w, h: BAND };
-      case 'left': return { x: g.x + g.w - BAND, y: g.y, w: BAND, h: g.h };
-      case 'right': return { x: g.x, y: g.y, w: BAND, h: g.h };
+      case 'bottom': return { tf: `translate(${g.x} ${g.y})`, map: (x, y) => [g.x + x, g.y + y] };
+      case 'top': return { tf: `translate(${g.x + W} ${g.y + C}) rotate(180)`, map: (x, y) => [g.x + W - x, g.y + C - y] };
+      case 'left': return { tf: `translate(${g.x + C} ${g.y}) rotate(90)`, map: (x, y) => [g.x + C - y, g.y + x] };
+      case 'right': return { tf: `translate(${g.x} ${g.y + W}) rotate(-90)`, map: (x, y) => [g.x + y, g.y + W - x] };
     }
-    return null;
-  }
-  // content area (outside the band)
-  function inner(g, hasBand) {
-    if (!hasBand) return { x: g.x, y: g.y, w: g.w, h: g.h };
-    switch (g.side) {
-      case 'bottom': return { x: g.x, y: g.y + BAND, w: g.w, h: g.h - BAND };
-      case 'top': return { x: g.x, y: g.y, w: g.w, h: g.h - BAND };
-      case 'left': return { x: g.x, y: g.y, w: g.w - BAND, h: g.h };
-      case 'right': return { x: g.x + BAND, y: g.y, w: g.w - BAND, h: g.h };
-    }
-    return { x: g.x, y: g.y, w: g.w, h: g.h };
+    return { tf: `translate(${g.x} ${g.y})`, map: (x, y) => [g.x + x, g.y + y] };
   }
   function el(tag, attrs, parent) {
     const e = document.createElementNS(NS, tag);
@@ -43,70 +49,135 @@
     if (parent) parent.appendChild(e);
     return e;
   }
+  function txt(parent, x, y, s, attrs) { const t = el('text', Object.assign({ x, y }, attrs || {}), parent); t.textContent = s; return t; }
+  // printed caps squeezed to fit the space, like the narrow type on the real board
+  function printLines(parent, lines, cx, y0, size, maxW, cls) {
+    lines.forEach((s, k) => {
+      const t = txt(parent, cx, y0 + k * (size + 1.5), s, { class: cls || 'nm', 'font-size': size });
+      const est = s.length * size * 0.66;
+      if (est > maxW) { t.setAttribute('textLength', maxW); t.setAttribute('lengthAdjust', 'spacingAndGlyphs'); }
+    });
+  }
 
-  // simple line glyphs, centred on (cx, cy), about 36 units tall
-  function glyph(i, cx, cy, parent, scale) {
-    const s = SQ[i], g = el('g', { class: 'glyph', transform: `translate(${cx} ${cy})${scale ? ` scale(${scale})` : ''}` }, parent);
-    const t = s.type;
-    if (t === 'chance') { const q = el('text', { x: 0, y: 14, 'font-size': 46, 'font-weight': 800, fill: '#f0b354', stroke: 'none', 'text-anchor': 'middle' }, g); q.textContent = '?'; }
-    else if (t === 'cc') { el('rect', { x: -18, y: -10, width: 36, height: 24, rx: 3, stroke: '#6ea8fe' }, g); el('path', { d: 'M-18 -2 H18 M-18 -10 Q0 -24 18 -10', stroke: '#6ea8fe' }, g); el('rect', { x: -4, y: -5, width: 8, height: 7, stroke: '#6ea8fe' }, g); }
-    else if (t === 'rr') { el('path', { d: 'M-20 8 V-6 H4 V-16 H14 V-6 H20 V8 Z M-14 -6 V-14 H-6 V-6' }, g); el('circle', { cx: -11, cy: 13, r: 5 }, g); el('circle', { cx: 11, cy: 13, r: 5 }, g); }
-    else if (t === 'util' && i === 12) { el('path', { d: 'M-7 10 V4 Q-16 -2 -16 -10 A16 16 0 0 1 16 -10 Q16 -2 7 4 V10 Z M-6 16 H6', stroke: '#f2d43a' }, g); }
-    else if (t === 'util') { el('path', { d: 'M0 -20 Q16 0 14 8 A14 14 0 0 1 -14 8 Q-16 0 0 -20 Z', stroke: '#6ea8fe' }, g); }
-    else if (t === 'tax' && i === 38) { el('path', { d: 'M-16 -6 L-8 -16 H8 L16 -6 L0 16 Z M-16 -6 H16', stroke: '#c9cedd' }, g); }
-    else if (t === 'tax') { el('circle', { cx: 0, cy: 0, r: 17, stroke: '#c9cedd' }, g); const d = el('text', { x: 0, y: 8, 'font-size': 22, 'font-weight': 800, fill: '#c9cedd', stroke: 'none', 'text-anchor': 'middle' }, g); d.textContent = '$'; }
-    else if (t === 'go') { el('path', { d: 'M26 26 H-24 M-8 10 L-24 26 L-8 42', stroke: '#e0413a', 'stroke-width': 7 }, g); const x = el('text', { x: 0, y: 2, 'font-size': 40, 'font-weight': 900, fill: '#e8eaf0', stroke: 'none', 'text-anchor': 'middle' }, g); x.textContent = 'GO'; }
-    else if (t === 'jail') { el('rect', { x: -6, y: -50, width: 56, height: 56, rx: 4, stroke: '#f08a2c', 'stroke-width': 4 }, g); el('path', { d: 'M8 -50 V6 M22 -50 V6 M36 -50 V6', stroke: '#f08a2c', 'stroke-width': 4 }, g); }
-    else if (t === 'free') { el('circle', { cx: 0, cy: -6, r: 24, stroke: '#6ea8fe', 'stroke-width': 5 }, g); const x = el('text', { x: 0, y: 6, 'font-size': 32, 'font-weight': 900, fill: '#6ea8fe', stroke: 'none', 'text-anchor': 'middle' }, g); x.textContent = 'P'; }
-    else if (t === 'gotojail') { el('path', { d: 'M24 -26 L-18 16 M-18 -6 V16 H4', stroke: '#e0413a', 'stroke-width': 7 }, g); }
+  // simple original line art, drawn upright around (0, 0), about 40 units tall
+  function glyph(i, parent) {
+    const s = SQ[i], t = s.type, g = el('g', { class: 'glyph' }, parent);
+    if (t === 'chance') { txt(g, 0, 18, '?', { 'font-size': 56, 'font-weight': 900, fill: i === 7 ? '#d6322b' : i === 22 ? '#2b62c4' : '#ef8a1d', stroke: INK, 'stroke-width': 1.5, class: 'qm' }); }
+    else if (t === 'cc') {
+      el('path', { d: 'M-20 -4 Q0 -22 20 -4 Z', fill: '#c98a3a' }, g);
+      el('rect', { x: -20, y: -4, width: 40, height: 22, rx: 2, fill: '#b36f2a' }, g);
+      el('path', { d: 'M-20 4 H20 M-13 -4 V18 M13 -4 V18', stroke: '#e9c25a', 'stroke-width': 3 }, g);
+      el('rect', { x: -4, y: 0, width: 8, height: 8, fill: '#e9c25a' }, g);
+    } else if (t === 'rr') {
+      el('path', { d: 'M-24 10 V-6 H2 V-18 H14 V-6 H22 V10 Z M-18 -6 V-15 H-8 V-6 M-30 10 L-24 4', fill: '#2a2a2a' }, g);
+      el('rect', { x: -2, y: -26, width: 8, height: 8, fill: '#2a2a2a' }, g);
+      [[-15, 14], [-3, 14], [12, 14]].forEach(([x, y]) => el('circle', { cx: x, cy: y, r: 5.5, fill: '#2a2a2a', stroke: MINT, 'stroke-width': 1.5 }, g));
+    } else if (t === 'util' && i === 12) {
+      el('path', { d: 'M-8 10 V4 Q-17 -3 -17 -11 A17 17 0 0 1 17 -11 Q17 -3 8 4 V10 Z', fill: '#f7df5a', stroke: INK, 'stroke-width': 2.5 }, g);
+      el('path', { d: 'M-7 14 H7 M-6 18 H6 M-4 -10 L0 -2 L4 -10', stroke: INK, 'stroke-width': 2.5, fill: 'none' }, g);
+    } else if (t === 'util') {
+      el('path', { d: 'M-20 -8 H6 Q14 -8 14 0 V6 H6 V2 Q6 0 4 0 H-20 Z M-10 -8 V-16 M-16 -16 H-4', fill: '#9aa6b2', stroke: INK, 'stroke-width': 2.5 }, g);
+      el('path', { d: 'M10 10 Q6 16 10 20 Q14 16 10 10 Z', fill: '#3d7fe0' }, g);
+    } else if (t === 'tax' && i === 38) {
+      el('path', { d: 'M-16 -8 L-8 -18 H8 L16 -8 L0 14 Z', fill: '#cfe9f5', stroke: INK, 'stroke-width': 2.5 }, g);
+      el('path', { d: 'M-16 -8 H16 M-6 -8 L0 14 L6 -8', stroke: INK, 'stroke-width': 1.5, fill: 'none' }, g);
+    } else if (t === 'tax') {
+      el('path', { d: 'M0 -20 L18 0 L0 20 L-18 0 Z', fill: 'none', stroke: INK, 'stroke-width': 3 }, g);
+      txt(g, 0, 8, '$', { 'font-size': 22, 'font-weight': 900, fill: INK });
+    }
     return g;
+  }
+
+  // the four corners: printed on the diagonal, facing whoever sits nearest
+  function corner(i, g, grp) {
+    const cx = g.x + C / 2, cy = g.y + C / 2;
+    const rot = { 0: -45, 10: 45, 20: 135, 30: -135 }[i];
+    if (i === 10) {
+      // the cell sits in the inner corner; "Just visiting" runs along the outside L
+      el('rect', { x: g.x + C * 0.3, y: g.y, width: C * 0.7, height: C * 0.7, fill: '#f08a2c', stroke: INK, 'stroke-width': 2 }, grp);
+      const bars = el('g', { stroke: INK, 'stroke-width': 3 }, grp);
+      for (let k = 1; k < 5; k++) el('line', { x1: g.x + C * 0.3 + k * C * 0.14, y1: g.y + 6, x2: g.x + C * 0.3 + k * C * 0.14, y2: g.y + C * 0.7 - 6 }, bars);
+      const lab = el('g', { transform: `translate(${g.x + C * 0.65} ${g.y + C * 0.35}) rotate(45)` }, grp);
+      el('rect', { x: -26, y: -11, width: 52, height: 22, fill: '#f6efe0', stroke: INK, 'stroke-width': 1.5 }, lab);
+      txt(lab, 0, 6, 'IN JAIL', { class: 'nm', 'font-size': 12 });
+      txt(grp, g.x + C * 0.6, g.y + C - 12, 'VISITING', { class: 'nm', 'font-size': 15 });
+      txt(grp, 0, 0, 'JUST', { class: 'nm', 'font-size': 15, transform: `translate(${g.x + 26} ${g.y + C * 0.38}) rotate(90)` });
+      return { glY: 0 };
+    }
+    const c = el('g', { transform: `translate(${cx} ${cy}) rotate(${rot})` }, grp);
+    if (i === 0) {
+      txt(c, 0, -34, 'COLLECT $200', { class: 'nm', 'font-size': 12 });
+      txt(c, 0, -21, 'SALARY AS YOU PASS', { class: 'nm', 'font-size': 10 });
+      txt(c, 0, 26, 'GO', { 'font-size': 58, 'font-weight': 900, fill: '#d6322b', class: 'go', 'letter-spacing': 2 });
+      el('path', { d: `M${g.x + C - 14} ${g.y + C - 16} H${g.x + 34} M${g.x + 50} ${g.y + C - 30} L${g.x + 24} ${g.y + C - 16} L${g.x + 50} ${g.y + C - 2}`, stroke: '#d6322b', 'stroke-width': 9, fill: 'none', 'stroke-linejoin': 'round' }, grp);
+    } else if (i === 20) {
+      txt(c, 0, -30, 'FREE', { class: 'nm', 'font-size': 17 });
+      el('path', { d: 'M-30 10 V0 L-20 -4 L-12 -16 H10 L20 -4 L30 0 V10 Z', fill: '#d6322b', stroke: INK, 'stroke-width': 2 }, c);
+      el('path', { d: 'M-9 -13 H0 V-4 H-15 Z M3 -13 H9 L16 -4 H3 Z', fill: '#cfe9f5' }, c);
+      el('circle', { cx: -17, cy: 11, r: 6.5, fill: INK }, c); el('circle', { cx: 17, cy: 11, r: 6.5, fill: INK }, c);
+      txt(c, 0, 40, 'PARKING', { class: 'nm', 'font-size': 17 });
+    } else if (i === 30) {
+      txt(c, 0, -32, 'GO TO', { class: 'nm', 'font-size': 17 });
+      // an officer's cap and a pointing arrow (towards the jail, across the board)
+      el('path', { d: 'M-16 -2 Q0 -22 16 -2 Z', fill: '#2b4f9e', stroke: INK, 'stroke-width': 2 }, c);
+      el('path', { d: 'M-20 -2 H20 V3 H-20 Z', fill: INK }, c);
+      el('path', { d: 'M0 30 V14 M-7 21 L0 13 L7 21', stroke: '#2b4f9e', 'stroke-width': 4, fill: 'none' }, c);
+      txt(c, 0, 52, 'JAIL', { class: 'nm', 'font-size': 17 });
+    }
+    return { glY: 0 };
   }
 
   function create(svg, onTap) {
     svg.innerHTML = '';
+    const defs = el('defs', {}, svg);
+    // pewter for the playing pieces
+    const lg = el('linearGradient', { id: 'pewter', x1: 0, y1: 0, x2: 1, y2: 1 }, defs);
+    [['0', '#f4f6f8'], ['.45', '#aab1ba'], ['.7', '#7d848e'], ['1', '#c9ced5']].forEach(([o, c]) => el('stop', { offset: o, 'stop-color': c }, lg));
+    el('rect', { class: 'board-paper', x: 0, y: 0, width: 1000, height: 1000 }, svg);
     el('rect', { class: 'board-felt', x: C, y: C, width: 1000 - 2 * C, height: 1000 - 2 * C }, svg);
     const sqs = [];
     for (let i = 0; i < 40; i++) {
       const s = SQ[i], g = geom(i);
+      const isCorner = g.side === 'corner';
       const grp = el('g', { class: 'sq', 'data-sq': i, tabindex: -1 }, svg);
       const base = el('rect', { class: 'base', x: g.x, y: g.y, width: g.w, height: g.h }, grp);
-      const hasBand = s.type === 'prop';
-      let band = null;
-      if (hasBand) { const b = bandRect(g); band = el('rect', { x: b.x, y: b.y, width: b.w, height: b.h, fill: GROUP_COLOR[s.group], stroke: '#0f1117', 'stroke-width': 2 }, grp); }
-      const r = inner(g, hasBand);
-      const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
-      const isCorner = g.side === 'corner';
-      // the owner strip sits on the outer edge: keep the name (top row) and price (bottom row) clear of it
-      const nm = el('text', { class: 'nm', x: cx, y: isCorner ? r.y + 22 : g.side === 'top' ? r.y + 30 : r.y + 20 }, grp);
-      nm.textContent = isCorner ? (i === 10 ? 'Jail' : i === 30 ? 'To Jail' : i === 20 ? 'Parking' : '') : s.short;
-      const sideways = g.side === 'left' || g.side === 'right'; // short squares: smaller picture between name and price
-      const glY = isCorner ? cy - (i === 10 ? -10 : i === 0 ? 14 : 8) : sideways ? cy + 1 : cy + 4;
-      const gl = (s.type !== 'prop') ? glyph(i, cx, glY, grp, sideways ? 0.62 : 0) : null;
-      // corners: picture in the middle, number underneath (jail: bottom-left, clear of the bars; GO: under the arrow)
-      const val = el('text', { class: 'val', x: i === 10 ? cx - 26 : cx, y: isCorner ? cy + 60 : cy + 10 }, grp);
-      const price = el('text', { class: 'price', x: cx, y: r.y + r.h - (g.side === 'bottom' ? 18 : 10) }, grp);
-      if (s.price) price.textContent = '$' + s.price;
-      // phone: names don't fit, so property squares show their price big in the middle instead of being blank
-      const sprice = hasBand ? el('text', { class: 'sprice', x: cx, y: cy + 9 }, grp) : null;
-      if (sprice) sprice.textContent = '$' + s.price;
-      // owner mark on the outer edge, buildings on the band
-      const om = el('rect', { class: 'ownmark', visibility: 'hidden' }, grp);
-      const o = outerStrip(g, 9); for (const k in o) om.setAttribute(k, o[k]);
-      const houses = el('g', {}, grp);
+      let band = null, nm = null, price = null, sprice = null, gl = null, om, houses, cx, cy;
+      if (isCorner) {
+        corner(i, g, grp);
+        cx = g.x + C / 2; cy = g.y + C / 2;
+        om = el('rect', { class: 'ownmark', visibility: 'hidden' }, grp);
+        houses = el('g', {}, grp);
+      } else {
+        const f = frame(g);
+        const loc = el('g', { transform: f.tf }, grp);
+        const hasBand = s.type === 'prop';
+        if (hasBand) band = el('rect', { class: 'band', x: 0, y: 0, width: W, height: BAND, fill: GROUP_COLOR[s.group] }, loc);
+        const top = hasBand ? BAND : 0;
+        const lines = PRINT[i] || [s.name.toUpperCase()];
+        nm = el('g', { class: 'print' }, loc);
+        printLines(nm, lines, W / 2, top + 17, 12.5, W - 8);
+        if (!hasBand) {
+          gl = el('g', { transform: `translate(${W / 2} ${s.type === 'chance' ? 72 : lines.length > 1 ? 74 : 66})` }, loc);
+          glyph(i, gl);
+        }
+        price = txt(loc, W / 2, C - 14, s.price ? '$' + s.price : s.amount ? 'PAY $' + s.amount : '', { class: 'price' });
+        // phone: names are too small to read, so lots show their price big in the middle instead
+        if (hasBand) { sprice = txt(loc, W / 2, BAND + (C - BAND) / 2 + 10, '$' + s.price, { class: 'sprice' }); }
+        om = el('rect', { class: 'ownmark', visibility: 'hidden', x: 3, y: C - 11, width: W - 6, height: 9 }, loc);
+        houses = el('g', { class: 'bldg' }, loc);
+        [cx, cy] = f.map(W / 2, (top + C) / 2);
+      }
       grp.addEventListener('click', () => onTap && onTap(i));
-      sqs.push({ grp, base, band, nm, val, price, sprice, gl, glY, sideways, om, houses, g, r, cx, cy, isCorner });
+      sqs.push({ grp, base, band, nm, price, sprice, gl, om, houses, g, cx, cy, isCorner });
     }
+    // Odds values sit upright on top of everything so they can always be read
+    const valLayer = el('g', { class: 'vals' }, svg);
+    sqs.forEach((q, i) => {
+      const y = q.isCorner ? q.cy + (i === 10 ? 52 : 50) : q.cy + 9;
+      q.val = txt(valLayer, i === 10 ? q.cx - 30 : q.cx, y, '', { class: 'val' });
+    });
     const tokLayer = el('g', { class: 'tokens' }, svg);
     return { svg, sqs, tokLayer, tokens: {}, anim: {} };
-  }
-  function outerStrip(g, t) {
-    switch (g.side) {
-      case 'bottom': return { x: g.x + 3, y: g.y + g.h - t - 2, width: g.w - 6, height: t };
-      case 'top': return { x: g.x + 3, y: g.y + 2, width: g.w - 6, height: t };
-      case 'left': return { x: g.x + 2, y: g.y + 3, width: t, height: g.h - 6 };
-      case 'right': return { x: g.x + g.w - t - 2, y: g.y + 3, width: t, height: g.h - 6 };
-    }
-    return { x: 0, y: 0, width: 0, height: 0 };
   }
 
   function lerpHex(a, b, t) {
@@ -130,37 +201,33 @@
     view.svg.classList.toggle('board-small', small);
     if (view.small !== small) {
       view.small = small;
-      // phone: thicker owner strips, bigger side pictures (no name/price around them to dodge)
+      // phone: thicker owner strips so the owner can be seen at a glance
       for (const q of view.sqs) {
-        const o = outerStrip(q.g, small ? 18 : 9); for (const k in o) q.om.setAttribute(k, o[k]);
-        if (q.gl && q.sideways) q.gl.setAttribute('transform', `translate(${q.cx} ${small ? q.cy : q.glY}) scale(${small ? 0.9 : 0.62})`);
+        if (!q.isCorner) { q.om.setAttribute('y', C - (small ? 20 : 11)); q.om.setAttribute('height', small ? 18 : 9); }
         q.hk = null;
       }
-      for (const id in view.tokens) {
-        const g = view.tokens[id].g, sh = g.querySelector('.shine');
-        g.querySelector('circle').setAttribute('r', small ? 21 : 15);
-        if (sh) { sh.setAttribute('r', small ? 8 : 6); sh.setAttribute('cx', small ? -6 : -4.5); sh.setAttribute('cy', small ? -6 : -4.5); }
-      }
+      for (const id in view.tokens) view.tokens[id].fig.setAttribute('transform', `scale(${small ? 1.45 : 1.05})`);
     }
     for (let i = 0; i < 40; i++) {
       const q = view.sqs[i];
       const h = opts.heat ? opts.heat[i] : null;
       const o = opts.own && opts.own[i];
       const owned = o && o.owner >= 0 && opts.colors;
-      // no heat: a faint wash of the set's colour so the board reads like a board; owned lots lean to the owner's colour
-      let fill = h == null ? (SQ[i].type === 'prop' ? lerpHex('#1d2231', GROUP_COLOR[SQ[i].group], 0.12) : '') : (opts.heatFn || heatColor)(h);
-      if (h == null && owned && !o.mort && /^#[0-9a-f]{6}$/i.test(opts.colors[o.owner] || '')) fill = lerpHex(fill || '#1d2231', opts.colors[o.owner], 0.2);
+      // no heat: the plain mint paper of the real board; owned lots lean a little towards the owner's colour
+      let fill = h == null ? MINT : (opts.heatFn || heatColor)(h);
+      if (h == null && owned && !o.mort && /^#[0-9a-f]{6}$/i.test(opts.colors[o.owner] || '')) fill = lerpHex(MINT, opts.colors[o.owner], 0.22);
       q.base.style.fill = fill;
-      const light = h != null && h > 0.62 && !opts.heatFn;
-      q.val.textContent = opts.values ? (opts.values[i] || '') : '';
-      q.val.style.fill = light ? '#1d1404' : '';
-      q.nm.style.fill = light ? '#2a1d06' : '';
-      q.price.style.display = opts.values && opts.values[i] ? 'none' : '';
-      if (q.sprice) q.sprice.style.display = opts.values && opts.values[i] ? 'none' : '';
-      if (q.gl) q.gl.style.display = opts.values && opts.values[i] && !q.isCorner ? 'none' : '';
+      // dark heat squares need light print
+      q.grp.classList.toggle('inv', h != null && !opts.heatFn && h <= 0.62);
+      const showVal = !!(opts.values && opts.values[i]);
+      q.val.textContent = showVal ? opts.values[i] : '';
+      q.val.style.fill = h != null && !opts.heatFn && h <= 0.62 ? '#f4f1ea' : '';
+      if (q.price) q.price.style.display = showVal ? 'none' : '';
+      if (q.sprice) q.sprice.style.display = showVal ? 'none' : '';
+      if (q.gl) q.gl.style.display = showVal ? 'none' : '';
+      if (q.isCorner) q.grp.classList.toggle('dimart', showVal);
       q.grp.classList.toggle('sel', opts.selected === i);
-      // owner + buildings
-      if (owned) {
+      if (owned && !q.isCorner) {
         q.om.setAttribute('visibility', 'visible');
         q.om.style.fill = opts.colors[o.owner] || '#888';
         q.om.style.opacity = o.mort ? 0.35 : 1;
@@ -170,29 +237,29 @@
     drawTokens(view, opts.tokens || [], small);
   }
 
+  // little green houses and red hotels with pitched roofs, standing on the colour band
   function drawHouses(q, n, mort, small) {
     const key = n + (mort ? 'm' : '') + (small ? 's' : '');
     if (q.hk === key) return;
     q.hk = key;
     q.houses.innerHTML = '';
     if (!q.band) return;
-    const b = q.band, x = +b.getAttribute('x'), y = +b.getAttribute('y'), w = +b.getAttribute('width'), h = +b.getAttribute('height');
-    const horiz = w > h;
-    if (mort) { const t = el('text', { x: x + w / 2, y: y + h / 2 + 6, 'font-size': small ? 19 : 16, 'font-weight': 800, fill: '#0f1117', 'text-anchor': 'middle' }, q.houses); t.textContent = horiz ? 'MORT' : 'M'; return; }
-    // phone: 18-unit houses (~7 px) so they can be counted; laptop keeps 14
-    const hs = small ? 18 : 14, gap = small ? 19.5 : 18, hl = small ? 26 : 22, ht = small ? 10 : 9;
-    if (n === 5) { el('rect', { class: 'house', x: x + w / 2 - (horiz ? hl : ht), y: y + h / 2 - (horiz ? ht : hl), width: horiz ? 2 * hl : 2 * ht, height: horiz ? 2 * ht : 2 * hl, rx: 3, fill: '#e0413a' }, q.houses); return; }
-    for (let k = 0; k < n; k++) {
-      const off = (k - (n - 1) / 2) * gap;
-      el('rect', { class: 'house', x: x + w / 2 - hs / 2 + (horiz ? off : 0), y: y + h / 2 - hs / 2 + (horiz ? 0 : off), width: hs, height: hs, rx: 2, fill: '#2fa35a' }, q.houses);
-    }
+    if (mort) { txt(q.houses, W / 2, BAND / 2 + 6, 'MORT', { 'font-size': small ? 19 : 15, 'font-weight': 900, fill: INK, class: 'mort' }); return; }
+    const hs = small ? 18 : 15, gap = small ? 19.5 : 18.5;
+    const house = (x0, w, fill, dark) => {
+      const yb = BAND / 2 + hs * 0.55, ym = yb - hs * 0.6, yt = ym - hs * 0.5, xm = x0 + w / 2;
+      el('path', { class: 'house', d: `M${x0} ${yb} V${ym} L${xm} ${yt} L${x0 + w} ${ym} V${yb} Z`, fill }, q.houses);
+      el('path', { d: `M${xm} ${yt} L${x0 + w} ${ym} V${yb} H${xm} Z`, fill: dark, opacity: 0.55 }, q.houses);
+    };
+    if (n === 5) { const w = small ? 46 : 40; house(W / 2 - w / 2, w, '#d4352e', '#7a1612'); return; }
+    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; house(W / 2 - hs / 2 + off, hs, '#2e9d4e', '#0f4a22'); }
   }
 
   function tokenXY(view, pos, slot, count, jail, small) {
     const q = view.sqs[pos];
     let cx = q.cx, cy = q.cy;
-    if (q.isCorner && pos !== 10) cy += small ? 38 : 34;
-    if (pos === 10) { if (jail) { cx = q.g.x + 98; cy = q.g.y + 36; } else { cx = q.g.x + 34; cy = q.g.y + 96; } }
+    if (q.isCorner && pos !== 10) cy += small ? 30 : 26;
+    if (pos === 10) { if (jail) { cx = q.g.x + 92; cy = q.g.y + 44; } else { cx = q.g.x + 30; cy = q.g.y + 92; } }
     const sp = small ? 30 : 24;
     const cols = Math.min(3, count), row = Math.floor(slot / 3), col = slot % 3;
     const dx = (col - (cols - 1) / 2) * sp, dy = (row - (Math.ceil(count / 3) - 1) / 2) * sp + (q.isCorner ? 0 : 6);
@@ -208,6 +275,17 @@
     tk.g.style.transform = `translate(${x}px, ${y}px)`;
   }
 
+  // small pewter pieces (original drawings), each standing on a base in its player's colour
+  const FIGS = [
+    'M-13 0 Q0 5 13 0 L9 -4 H7 V-22 Q0 -25 -7 -22 V-4 H-9 Z',                                   // hat
+    'M-16 -2 V-8 L-10 -10 L-5 -17 H6 L11 -10 L16 -8 V-2 Z',                                       // car
+    'M-16 -9 H16 L10 0 H-10 Z M-1 -9 V-26 L11 -12 H-1',                                           // ship
+    'M-6 -25 H4 V-9 L14 -6 Q16 0 10 0 H-8 Q-9 -7 -6 -11 Z',                                       // boot
+    'M-9 0 L-7 -18 Q0 -25 7 -18 L9 0 Z',                                                           // thimble
+    'M-15 0 H15 Q13 -10 0 -12 H-15 Z M-9 -12 Q-5 -23 7 -12',                                      // iron
+    'M-15 -14 H8 L4 -5 H-11 Z M-15 -14 L-19 -18 M-11 -5 L-15 0',                                   // barrow
+    'M-15 0 V-8 L-13 -15 L-9 -10 H6 L8 -17 L15 -12 V-8 L11 -6 V0 H7 V-4 H-8 V0 Z',                // dog
+  ];
   function drawTokens(view, tokens, small) {
     const seen = {};
     const groups = {};
@@ -219,15 +297,19 @@
       let tk = view.tokens[t.id];
       if (!tk) {
         const g = el('g', { class: 'token' }, view.tokLayer);
-        el('circle', { r: small ? 21 : 15, fill: t.color }, g);
-        // a soft highlight so the piece reads as a round counter, not a flat dot
-        el('circle', { class: 'shine', r: small ? 8 : 6, cx: small ? -6 : -4.5, cy: small ? -6 : -4.5 }, g);
-        tk = view.tokens[t.id] = { g, pos: t.pos, jail: t.jail };
+        const fig = el('g', { transform: `scale(${small ? 1.45 : 1.05})` }, g);
+        el('ellipse', { class: 'shadow', cx: 2, cy: 9, rx: 17, ry: 6 }, fig);
+        el('ellipse', { class: 'base', cx: 0, cy: 6, rx: 15, ry: 6, fill: t.color }, fig);
+        const n = (+String(t.id).replace(/\D/g, '') || 0) % FIGS.length;
+        el('path', { class: 'pewter', d: FIGS[n], transform: 'translate(0 6)' }, fig);
+        if (n === 1) [-8, 8].forEach(x => el('circle', { class: 'pewter', cx: x, cy: 5, r: 3.5 }, fig));
+        if (n === 6) el('circle', { class: 'pewter', cx: 8, cy: 3, r: 4 }, fig);
+        tk = view.tokens[t.id] = { g, fig, pos: t.pos, jail: t.jail };
         const [x, y] = tokenXY(view, t.pos, slot, count, t.jail, small);
         place(tk, x, y, 0);
       }
       tk.g.classList.toggle('turn', !!t.turn);
-      tk.g.querySelector('circle').setAttribute('fill', t.color);
+      tk.g.querySelector('.base').setAttribute('fill', t.color);
       tk.g.style.opacity = t.out ? 0.25 : 1;
       const dest = tokenXY(view, t.pos, slot, count, t.jail, small);
       if (tk.pos !== t.pos && !t.jump && !t.jail) hop(view, tk, tk.pos, t.pos, dest, small);
@@ -252,7 +334,7 @@
       if (k >= steps.length) { tk.busy = false; tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`; tk.g.style.transform = `translate(${tk.final[0]}px, ${tk.final[1]}px)`; return; }
       const sq = view.sqs[steps[k]];
       tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`;
-      tk.g.style.transform = `translate(${sq.cx}px, ${sq.cy + (sq.isCorner ? (small ? 38 : 34) : 6)}px)`;
+      tk.g.style.transform = `translate(${sq.cx}px, ${sq.cy + (sq.isCorner ? (small ? 30 : 26) : 6)}px)`;
       k++;
       setTimeout(tick, per);
     };

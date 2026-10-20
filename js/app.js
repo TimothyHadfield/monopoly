@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.5 · 2026-10-20';
+  const VERSION = 'v1.6 · 2026-10-20';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -121,15 +121,26 @@
   }
 
   // ---------------------------------------------------------------- layout
-  function layout() {
+  // a game in progress is laid out like a real table: other players' seats, the board,
+  // and your own money and deeds in front of you (phone: strip / board / your area;
+  // laptop: seats left, board with your area under it, a slim side panel on the right)
+  const SEATS_H = 54, MINE_H = 104, MINE_HW = 128, SEATS_W = 210, SIDE_W = 290;
+  function layout(playing) {
+    if (playing == null) playing = document.body.classList.contains('playing');
     const wide = innerWidth >= 900;
+    const land = !wide && innerWidth > innerHeight * 1.2;
+    document.body.classList.toggle('land', land);
     const head = wide ? 56 : 44, tab = wide ? 0 : $('tabsBottom').offsetHeight || 58;
     let size;
-    if (wide) size = Math.min(innerHeight - head - 32, innerWidth - 500 - 64);
+    if (wide && playing) size = Math.min(innerHeight - head - 32 - MINE_HW - 10, innerWidth - 40 - SEATS_W - SIDE_W - 36);
+    else if (wide) size = Math.min(innerHeight - head - 32, innerWidth - 500 - 64);
+    else if (playing && land) size = Math.min(innerHeight - head - tab - 12, innerWidth * 0.46);
+    else if (playing) size = Math.min(innerWidth - 16, innerHeight - head - tab - 8 - SEATS_H - MINE_H - 16);
     else size = Math.min(innerWidth - 16, innerHeight - head - tab - 16 - 190);
-    size = Math.max(260, Math.floor(size));
+    size = Math.max(playing ? 200 : 260, Math.floor(size));
     $('boardWrap').style.width = size + 'px';
     $('boardWrap').style.height = size + 'px';
+    $('boardWrap').style.setProperty('--bw', size + 'px');
   }
 
   // ---------------------------------------------------------------- odds maths
@@ -625,9 +636,50 @@
       pump();
     }, delay() * (G.phase === 'roll' ? 1.2 : 1));
   }
-  function dieHTML(n, anim) {
-    const on = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] }[n] || [];
-    return `<div class="die${anim ? ' roll' : ''}">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map(k => `<i class="${on.includes(k) ? 'on' : ''}"></i>`).join('')}</div>`;
+  // real white dice, thrown into the middle of the board: each lands at its own small angle
+  function dieHTML(n, anim, seed, k) {
+    const on = { 1: [5], 2: [3, 7], 3: [3, 5, 7], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] }[n] || [];
+    const j = window.TABLE ? TABLE.jitter(seed || 'd', k || 0, { rot: 16, off: 3 }) : { x: 0, y: 0, r: 0 };
+    return `<div class="tbl-die mdie${anim ? ' roll' : ''}" style="--jr:${j.r}deg;--jx:${j.x}px;--jy:${j.y}px" aria-label="Die showing ${n}">${on.map(c => `<i style="grid-area:${Math.ceil(c / 3)}/${(c - 1) % 3 + 1}"></i>`).join('')}</div>`;
+  }
+
+  // ---------------------------------------------------------------- table pieces: money, deeds, jail cards
+  // paper money sorted by note, like the piles in front of a real player
+  const BILLS = [[500, '#f3a35c'], [100, '#eadcbc'], [50, '#93bdea'], [20, '#a6d79c'], [10, '#f3e27c'], [5, '#f2bccb'], [1, '#f8f6ef']];
+  function billsHTML(cash, max, only) {
+    let a = Math.max(0, Math.floor(cash)), h = '', stacks = 0;
+    for (const [v, c] of BILLS) {
+      const n = Math.floor(a / v);
+      if (!n) continue;
+      a -= n * v;
+      if (only && stacks >= only) continue;
+      stacks++;
+      const k = Math.min(n, max || 4);
+      h += `<span class="bstack" style="--n:${k}" title="${n} × $${v}">${Array.from({ length: k }, (_, i) => `<span class="bill" style="--bc:${c};--i:${i}"><b>${v}</b></span>`).join('')}</span>`;
+    }
+    return `<span class="bills">${h}</span>`;
+  }
+  const GORDER = ['brown', 'lblue', 'pink', 'orange', 'red', 'yellow', 'green', 'blue', 'rr', 'util'];
+  // a title deed: colour band at the top, the rent ladder underneath; mortgaged ones lie face down
+  function deedHTML(i, mort, cls) {
+    const s = SQ[i];
+    if (mort) return `<span class="deed back ${cls || ''}" title="${esc(s.name)} (mortgaged)"><i>M</i></span>`;
+    const head = s.type === 'prop' ? GROUP_COLOR[s.group] : '#f4f1ea';
+    return `<span class="deed ${s.type} ${cls || ''}" style="--dc:${head}" title="${esc(s.name)}"><em>${esc(s.short)}</em><u></u><u></u><u></u></span>`;
+  }
+  function deedsHTML(st, k) {
+    const lots = st.own.map((o, i) => i).filter(i => st.own[i].owner === k);
+    return GORDER.map(g => lots.filter(i => SQ[i].group === g)).filter(x => x.length)
+      .map(gr => `<span class="dset">${gr.map(i => deedHTML(i, st.own[i].mort)).join('')}</span>`).join('');
+  }
+  const jailCards = p => (p.cards || []).map(d => `<span class="jcard ${d === 'chance' ? 'chance' : 'chest'}" title="Get Out of Jail Free"></span>`).join('');
+  // deed card width so a whole holding fits the space in front of a player
+  function deedWidth(st, k, avail, maxW, minW) {
+    const lots = st.own.filter(o => o.owner === k).length;
+    const sets = GORDER.filter(g => st.own.some((o, i) => o.owner === k && SQ[i].group === g)).length;
+    if (!lots) return maxW;
+    const units = sets + (lots - sets) * 0.34 + (sets - 1) * 0.12;
+    return Math.max(minW, Math.min(maxW, Math.floor(avail / units)));
   }
   const Play = {
     board() {
@@ -652,8 +704,8 @@
         return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} rounds</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
       }
       h += `<div class="cap turn"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
-      if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim)}${dieHTML(st.dice[1], anim)}</div>`;
-      if (st.lastCard && st.lastCard.n === st.turns) h += `<div class="cardnote ${st.lastCard.deck}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
+      if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim, dk, 0)}${dieHTML(st.dice[1], anim, dk, 1)}</div>`;
+      if (st.lastCard && st.lastCard.n === st.turns) h += `<div class="cardnote ${st.lastCard.deck}" data-ck="${st.lastCard.deck}:${st.lastCard.n}:${st.lastCard.idx}"><b>${st.lastCard.deck === 'chance' ? 'Chance' : 'Community Chest'}</b>${esc(st.lastCard.text)}</div>`;
       if (me < 0) { h += `<div class="csub">${esc(say(st.log[st.log.length - 1] || ''))}</div>`; return h; }
       const p = st.players[me];
       const btn = (act, label, cls, extra) => `<button class="btn ${cls || ''}" data-act="${act}" ${extra || ''}>${label}</button>`;
@@ -680,8 +732,12 @@
       if (netResuming && !NETS) return '<div class="empty">Reconnecting to your room…</div>';
       if (NETS && !G) return Play.lobbyPanel();
       if (!G) return Play.setupPanel();
+      return Play.sidePanel();
+    },
+    // the slim side panel (laptop) / Log sheet (phone): round, everyone's worth, the log, the chart
+    sidePanel() {
       const st = G;
-      let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2><span class="grow"></span>${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt') ? '' : 'disabled'}>Trade</button></div><div class="list">`;
+      let h = `<div class="ph"><h2>Round ${st.round}${st.rules.roundLimit ? ' of ' + st.rules.roundLimit : ''}</h2></div><div class="list">`;
       st.players.forEach((p, k) => {
         const lots = st.own.filter(o => o.owner === k).length;
         h += `<div class="rowi tap prow${k === st.turn ? ' turn' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};${p.out ? 'opacity:.4' : ''}"><span class="dot" style="background:${COLORS[k]}"></span><span class="name">${esc(p.name)}<br><span class="sub">${p.out ? 'bankrupt' : (NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : k === NETS.mySeat ? 'you' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'you') + ' · ' + lots + (lots === 1 ? ' lot' : ' lots') + (p.jail ? ' · jail' : '') + (p.cards.length ? ' · jail card' : '')}</span></span><span class="v"><span class="cash">${money(p.cash)}</span><small>worth ${money(Money.netWorth(st, k))}</small></span></div>`;
@@ -690,6 +746,54 @@
       h += `</div>${st.rules.freeParking ? `<p class="csub" style="margin:8px 2px">Free Parking pot: ${money(st.pot)}</p>` : ''}<div class="sec">Log</div><div class="log">${st.log.slice(-8).map(l => `<div>${esc(say(l))}</div>`).join('')}</div>
         <div class="row" style="margin-top:12px;display:flex;gap:8px">${NETS ? `<span class="csub" style="align-self:center">Room ${esc(NETS.code)}${NETS.hostAway ? ' · host away' : ''}</span><button class="btn small ghost" data-act="netleave">Leave room</button>` : '<button class="btn small ghost" data-act="newgame">New game</button>'}</div>`;
       return h;
+    },
+    // whose things lie at the bottom edge: your seat (online), the person whose turn it is
+    // (pass-and-play), else the first person seat; -1 = only computers are playing
+    me() {
+      const st = G;
+      if (NETS) return NETS.mySeat >= 0 ? NETS.mySeat : -1;
+      const h = humanSeat(st);
+      if (h >= 0) return (Play.lastMe = h);
+      if (Play.lastMe >= 0 && st.players[Play.lastMe] && st.players[Play.lastMe].kind === 'human') return Play.lastMe;
+      return st.players.findIndex(p => p.kind === 'human');
+    },
+    lastMe: -1,
+    seatSub(st, k) {
+      const p = st.players[k];
+      if (p.out) return 'bankrupt';
+      const who = NETS ? ((NETS.seats[k] || {}).kind === 'computer' ? 'computer' : ((NETS.seats[k] || {}).online ? 'online' : 'offline')) : p.kind === 'cpu' ? p.level : 'person';
+      return who + (p.jail ? ' · jail' : '');
+    },
+    // the other players round the table, in turn order after you
+    seats() {
+      const st = G, me = Play.me(), n = st.players.length;
+      const order = [];
+      for (let j = 1; j <= n; j++) { const k = ((me < 0 ? -1 : me) + j + n) % n; if (k !== me) order.push(k); }
+      const wide = innerWidth >= 900, land = document.body.classList.contains('land');
+      const avail = wide ? SEATS_W - 20 : land ? innerWidth * 0.22 - 20 : Math.max(60, (innerWidth - 16) / order.length - 50);
+      return order.map(k => {
+        const p = st.players[k];
+        const dw = deedWidth(st, k, avail, wide ? 26 : 16, wide ? 12 : 9);
+        return `<div class="seat${k === st.turn && st.phase !== 'over' ? ' turn' : ''}${p.out ? ' out' : ''}" data-act="pinfo" data-k="${k}" style="--pc:${COLORS[k]};--dw:${dw}px" role="button" aria-label="${esc(p.name)}">
+          <div class="plate"><span class="pdot"></span><span class="pn">${esc(p.name)}</span><span class="ps">${Play.seatSub(st, k)}</span></div>
+          <div class="sarea"><span class="sdeeds">${deedsHTML(st, k)}${jailCards(p)}</span><span class="scash">${billsHTML(p.cash, wide ? 3 : 2, wide ? 4 : innerWidth < 380 ? 1 : 2)}<b data-cash="${k}">${money(p.cash)}</b></span></div>
+          ${wide ? `<div class="sworth">worth ${money(Money.netWorth(st, k))}</div>` : ''}</div>`;
+      }).join('');
+    },
+    // your own money and deeds, laid out in front of you, with your buttons
+    mine() {
+      const st = G, me = Play.me(), act = humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt');
+      const wide = innerWidth >= 900, land = document.body.classList.contains('land');
+      const btns = `${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${act ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${act ? '' : 'disabled'}>Trade</button>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`;
+      if (me < 0) return `<div class="mbar"><span class="csub">Computers only</span><span class="grow"></span>${btns}</div>`;
+      const p = st.players[me];
+      const avail = wide ? $('boardWrap').offsetWidth - 190 : land ? innerWidth * 0.3 - 20 : innerWidth - 16 - 150;
+      const dw = deedWidth(st, me, avail, wide ? 44 : 36, 16);
+      return `<div class="mrow"style="--pc:${COLORS[me]};--dw:${dw}px">
+          <div class="mdeeds" data-act="pinfo" data-k="${me}" role="button" aria-label="Your deeds">${deedsHTML(st, me) || '<span class="tbl-spot dspot"></span>'}${jailCards(p)}</div>
+          <div class="mcash">${billsHTML(p.cash, 4)}<b data-cash="${me}">${money(p.cash)}</b></div>
+        </div>
+        <div class="mbar"><span class="plate${me === st.turn && st.phase !== 'over' ? ' turn' : ''}" style="--pc:${COLORS[me]}"><span class="pdot"></span>${esc(p.name)}${p.jail ? ' · jail' : ''}</span><span class="grow"></span>${btns}</div>`;
     },
     lobbyPanel() {
       const n = NETS;
@@ -806,7 +910,7 @@
           setGame(ng);
           render(); pump(); return;
         }
-        case 'newgame': gen++; clearTimeout(timer); setGame(null); render(); return;
+        case 'newgame': closeSheet(); gen++; clearTimeout(timer); setGame(null); render(); return;
         case 'netcreate': {
           const mine = su.seats.findIndex(x => x.kind === 'human');
           const name = (su.seats[mine >= 0 ? mine : 0].name || 'Player').slice(0, 12);
@@ -827,6 +931,7 @@
         case 'netseat': if (NET) netRun(N => N.setSeat(+d.k, d.v)); return;
         case 'netstart': if (NET) netRun(N => N.start()); return;
         case 'netleave': {
+          closeSheet();
           if (!NET) return;
           const N = NET;
           const p = NETS && NETS.isHost && NETS.status !== 'playing' ? N.close() : N.leave();
@@ -840,6 +945,7 @@
         case 'rule': su.rules[d.k] = e.target.checked; break;
         case 'rlimit': su.rules.roundLimit = +d.v; break;
         case 'manage': Play.manageSheet(); return;
+        case 'logsheet': openSheet(Play.sidePanel() + '<div class="acts"><button class="btn primary" data-act="close">Close</button></div>'); return;
         case 'gtrade': Play.tradeSheet(); return;
         case 'seeoffer': Play.offerSheet(); return;
         case 'hint': {
@@ -946,8 +1052,14 @@
     renderTabs();
     G = NETS ? NETS.pub : S.game;
     const sc = SCREENS[S.tab];
+    const playing = S.tab === 'play' && !!G && !(netResuming && !NETS);
+    if (playing !== document.body.classList.contains('playing') || !render.laid) { document.body.classList.toggle('playing', playing); layout(playing); render.laid = true; }
+    $('seats').hidden = !playing; $('mine').hidden = !playing;
+    if (playing) { $('seats').innerHTML = Play.seats(); $('mine').innerHTML = Play.mine(); }
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
+    drawDecks();
     $('center').innerHTML = sc.center();
+    dealCard();
     const keep = $('panel').scrollTop;
     $('panel').innerHTML = sc.panel();
     $('panel').scrollTop = keep;
@@ -962,7 +1074,7 @@
   const fxDom = {
     token: k => (BV && BV.tokens['g' + k] ? BV.tokens['g' + k].g : null),
     square: sq => (BV && BV.sqs[sq] ? BV.sqs[sq].grp : null),
-    cash: k => document.querySelector(`#panel .prow[data-k="${k}"] .cash`),
+    cash: k => document.querySelector(`#seats [data-cash="${k}"], #mine [data-cash="${k}"]`),
     center: () => $('boardWrap'),
     card: () => document.querySelector('#center .cardnote'),
     turnBtn: () => document.querySelector('#center .btn.warm, #center .btn.primary'),
@@ -982,8 +1094,53 @@
     if (!G || !prev || !same || prev === G || S.tab !== 'play' || !window.FX || !window.MonoFX) return;
     const mine = k => (NETS ? k === NETS.mySeat : !!(G.players[k] && G.players[k].kind === 'human'));
     try { MonoFX.run(MonoFX.events(prev, G, { mine, f: fxSpeed(), colors: COLORS }), fxDom); } catch (e) { /* effects never break the game */ }
+    try { flyDeeds(prev, G); } catch (e) { /* effects never break the game */ }
   }
   function fxError() { if (window.FX) FX.play('error'); }
+  // ---------------------------------------------------------------- the card decks on the board
+  // Chance and Community Chest lie face down on their places in the middle; a held
+  // Get Out of Jail Free card leaves its deck thinner until it is used
+  function drawDecks() {
+    if (!window.TABLE) return;
+    const st = S.tab === 'play' && G ? G : null;
+    [['chance', 'deckChance'], ['chest', 'deckChest']].forEach(([d, id]) => {
+      const n = st && st.decks && st.decks[d] ? st.decks[d].length : 16, el = $(id);
+      el.hidden = S.tab !== 'play'; // the helper tabs keep the middle clear for their numbers
+      if (el.dataset.count === String(n) && el.firstChild) return;
+      TABLE.deck(el, n, { pattern: 'plain', cls: 'mback ' + d, badge: false, perCard: 0.45, max: 8 });
+    });
+  }
+  // a drawn card flies off its deck, then turns face up in the middle of the board
+  let dealt = '', dealing = '';
+  function dealCard() {
+    const c = document.querySelector('#center .cardnote');
+    if (!c) return;
+    const key = c.dataset.ck;
+    if (key === dealing) { c.style.opacity = 0; return; }
+    if (key === dealt) return;
+    dealt = key;
+    if (!window.TABLE || !TABLE.animOn() || !fxPrev) return; // reload / animations off: just show it
+    const deck = $(c.classList.contains('chance') ? 'deckChance' : 'deckChest');
+    dealing = key; c.style.opacity = 0;
+    TABLE.deal(deck, c, { duration: 380 }).then(() => {
+      dealing = '';
+      const now = document.querySelector(`#center .cardnote[data-ck="${key}"]`);
+      if (now) { now.style.opacity = ''; now.classList.add('flipin'); }
+    });
+  }
+  // a deed that changes hands slides from its square (bought) or from the old owner (traded) to the new owner
+  function flyDeeds(prev, st) {
+    if (!window.TABLE || !TABLE.animOn() || !prev || !prev.own || S.tab !== 'play') return;
+    st.own.forEach((o, i) => {
+      const was = prev.own[i] ? prev.own[i].owner : -1;
+      if (o.owner < 0 || o.owner === was) return;
+      const to = document.querySelector(`#mine .mdeeds[data-k="${o.owner}"], #seats .seat[data-k="${o.owner}"] .sdeeds`);
+      const box = was >= 0 ? document.querySelector(`#mine .mdeeds[data-k="${was}"], #seats .seat[data-k="${was}"] .sdeeds`) : null;
+      const from = was >= 0 ? (box && (box.querySelector('.deed') || box)) : BV.sqs[i].grp;
+      if (!to || !from) return;
+      TABLE.deal(from, to, { face: deedHTML(i, false, 'flying'), duration: 520 });
+    });
+  }
   // redraw everything except the panel (keeps a focused input and its keyboard)
   function renderLight(withResult) {
     const sc = SCREENS[S.tab];
