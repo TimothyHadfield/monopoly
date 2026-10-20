@@ -26,3 +26,9 @@
 - **Asked:** "add opptional sounds ... win celebrations, and other fun annimations ... everything is customizable in the settings".
 - **Built:** `js/fx.js` (shared, unchanged copy), `js/fx-game.js` (state-diff event map → sounds + effects, custom `hop` and `clank`), Settings > Sound & effects, cash count-up + floats, coin flight for rent, card flip, win/lose confetti; existing token glide + dice tumble now obey Animations/Speed. Sound map in progress.md.
 - **Verified:** `tests/fx.test.js` (failed first: module missing, then wiring missing) + full `npm test` 48 pass; phone-view WebKit 393 px + desktop of Settings, a round-17 roll (card + "+$10" float), win screen (confetti); Animations off = 0 overlays/animations; 0 console errors, no overflow.
+
+## 2026-10-20 · v1.6 real-table look (builder, manager brief)
+- **Asked:** make the game look like the real board on a real table from the player's seat (Tim's words in progress.md).
+- **Built:** board redrawn like the real print (`js/boardview.js`), wood table, seats strip/column with deeds + bills, your area with deeds + bill stacks, real Chance/Chest decks on the board (`TABLE.deck`), dealt + flipped cards, flying deeds, laptop side panel, phone Log sheet; `css/table.css`/`js/table.js` byte copies; `.gitattributes` for the shared copies.
+- **Verified:** `npm test` 48 pass (incl. online) on branch and on main; WebKit 320×568, 393×659, 659×393, 1280×800, 1440 laptop: 0 console errors, no overflow, no page scroll; 60 s scripted play: 19 actions, 3 cards dealt, deeds flew, 0 errors. Before/after shots in the builder scratchpad `table/monopoly/`.
+- **Open:** reviewer sub-agent was blocked by the agent limit (self-review only).

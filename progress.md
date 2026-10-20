@@ -2,7 +2,7 @@
 
 ## START HERE
 Read order: this file → `CLAUDE.md` → `docs/rules-check.md` → `docs/ideas.md` → `chat.md`.
-Last updated: 2026-10-20 (v1.5 sounds, celebrations + animations; v1.4 visual pass; v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
+Last updated: 2026-10-20 (v1.6 real-table look; v1.5 sounds, celebrations + animations; v1.4 visual pass; v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
 
 ## Goal right now
 A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap), a real-table money companion, a trade evaluator, and full rules-exact games against measured computers, with online seats once the shared module exists.
@@ -21,6 +21,7 @@ A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap),
 | QA pass (fresh agent, 2026-10-19) | all 9 findings fixed in v1.2 |
 | Visual pass (v1.4, 2026-10-20) | done: phone lots show prices, owner tint, bigger houses/tokens, gliding tokens, bigger laptop centre |
 | Sounds + celebrations + animations (v1.5, 2026-10-20) | done: shared `js/fx.js` (byte copy of `_fx/fx.js`) + game-local `js/fx-game.js`; Settings > Sound & effects; `tests/fx.test.js` |
+| Real-table look (v1.6, 2026-10-20) | done: wood table, board printed like the real one (names, glyphs, diagonal corners, upside-down far rows), pewter tokens, real decks on the board, opponents' seats (deeds + bills), your deeds + bill stacks at the bottom, cards dealt from the deck and flipped, deeds fly to the buyer. Phone: seats strip on top, Log behind a tap; laptop: seats left, slim side panel right. Shared `css/table.css` + `js/table.js` = byte copies of `_table/`. Research: builder scratchpad `table/monopoly/real.md` |
 
 ## Sound map (v1.5, `js/fx-game.js` `events()`; driven by the state diff, so computer + online moves sound the same)
 | Game event | Sound | Animation |
@@ -69,11 +70,13 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - "Make sure to get everything right like rules and artwork and specific numbers of cards, routes, details, etc."
 - Money $0, static GitHub Pages, no copied publisher art or rulebook text.
 - "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered." (2026-10-20)
+- "could you also make sure that each of the games also have a look to them so that the game (either board or card layout) looks almost identical to how the board or card layout looks like in real life, so it's easy to understand if you've already played it before, and also so it feels more like you're actually playing in real life rather than you're playing it online. Even things like how youre cards or other things are laid out infront of you, make it look like they are actual cards laid out similar to how it looks like in real life. Make the decks look like actual decks. Make the board have the same design as it does in real life with the same layouts. It should look kind of like you're looking through a camera that is connected to a user's glasses that is playing in real life (not actually, but the layout and style of everything should be similar)." (2026-10-20)
 
 ## Traps
 - Online test account: none needed (anonymous Firebase login). The two-browser script lives in the builder scratchpad, not the repo; rooms expire by TTL within 3 days (QA left room 8JKNT, a test left 3RLYE).
 - Never edit `js/online.js` here: re-copy it from `Board and Card Games/_online/` when that module changes.
 - Never edit `js/fx.js`: re-copy it from `Board and Card Games/_fx/`. Game sounds/effects live in `js/fx-game.js`; `BoardView.speed` (1 / 0.5 / 0) and the `fx-noanim` / `fx-fast` classes on `<html>` make the existing token glide and dice tumble obey Settings.
+- Never edit `js/table.js` / `css/table.css`: re-copy from `Board and Card Games/_table/`. `.gitattributes` marks the three shared copies `-text`, because with `autocrlf=true` a merge rewrote them as CRLF and the byte-copy test failed (2026-10-20).
 - Run tests as `npm test` (node --test with explicit files; a bare `node --test tests/` fails on Windows).
 - The engine clones state on every `apply` (fast hand-written deep copy). Never mutate a state you got back; `AI.hint` temporarily flips the seat's level and restores it.
 - `rules.manualDice` lets an action carry its own dice: tests only (and a future "real dice" mode). Online seats must never get it.
@@ -94,6 +97,7 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - Computer trades (v1.3): Medium/Hard offer set-completing trades at end of turn (1 per turn), cash-balanced to the fair meter (never worse than -$50 for the other side); a declined offer isn't repeated for 6 rounds. Hard won't sell a lot that finishes someone else's set without a 25% premium. Easy never trades.
 - Visual pass v1.4 (not Tim's choices, flagged): phone board (<560px) shows each lot's price instead of a blank square; owned lots are tinted 20% toward the owner's colour; owner strip 18u on phone; phone header 44px with no version (Settings shows it); laptop panel 480px; tokens are CSS-transformed (style.transform) so they glide.
 - v1.5 effects (not Tim's choices, flagged): Sound & effects sits in Settings after Play; railroad buys whistle; jail = custom metal clank; set completion and hotels get the "big" sparkle; computer sounds at 0.8 volume; Fast = half durations.
+- v1.6 table look (not Tim's choices, flagged): dark wood surface; far rows printed upside down like a real board seen from your seat; tokens are original pewter silhouettes on a base in the player's colour; cash shown as a greedy bill breakdown; owner strip + tint kept; Hint/Manage/Trade moved to your bottom bar; Log behind a tap on phone; decks show on the Play tab only; laptop board shrank (~582px at 1280 wide) to fit seats + side panel.
 - Online: privateView is empty (nothing secret but the seed and deck order, which publicView hides). The room creator's browser runs the engine and the computers.
 
 ## NOT verified
@@ -104,4 +108,5 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - Hard beats Medium only modestly (32% vs fair 25%) since v1.3.
 - v1.4 token glide and owner tint checked only in headless WebKit/Chromium screenshots, not on a real iPhone.
 - v1.5 sounds were never heard by a person: headless WebKit has no Web Audio; tests use a fake AudioContext. Online sounds from snapshots not tested with two browsers. Confetti seen in headless screenshots only.
+- v1.6: the brief's read-only reviewer sub-agent could not start (concurrent agent limit), so the review was a self-review against real.md. Phone board shows prices, not street names (too small at 393px). On a card turn the Build button can overlap the Chance deck. Card deal/flip and deed flights were counted in a 60 s headless WebKit play run; not seen on a real iPhone.
 - Lobby shows a just-joined friend as offline for a few seconds (presence heartbeat lag).
