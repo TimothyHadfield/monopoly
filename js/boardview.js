@@ -165,19 +165,34 @@
         const top = hasBand ? BAND : 0;
         const lines = PRINT[i] || [s.name.toUpperCase()];
         nm = el('g', { class: 'print' }, loc);
-        printLines(nm, lines, W / 2, top + 17, 12.5, W - 8);
+        printLines(nm, lines, W / 2, top + 18, 14.5, W - 8);
         if (!hasBand) {
           gl = el('g', { transform: `translate(${W / 2} ${s.type === 'chance' ? 72 : s.price ? 70 : lines.length > 1 ? 74 : 66})` }, loc);
           if (s.price) grp.classList.add('ru'); // railroads + utilities: name, picture and price all fit on a phone
           glyph(i, gl);
         }
-        price = txt(loc, W / 2, C - 14, s.price ? '$' + s.price : s.amount ? 'PAY $' + s.amount : '', { class: 'price' });
-        // phone: a short name in bigger type and the price under it (the full print is too small to read)
+        price = txt(loc, W / 2, C - 19, s.price ? '$' + s.price : s.amount ? 'PAY $' + s.amount : '', { class: 'price' });
+        // phone: a short name in bigger type and the price under it (the full print is too small to read),
+        // printed the right way up on every side so a phone can read it without turning the board
         if (s.price) {
-          const pl = PHONE[i] || [s.short.toUpperCase()], ph = el('g', { class: 'pprint' }, loc);
-          const y0 = hasBand ? BAND + 22 : 21;
-          printLines(ph, hasBand ? pl : pl.slice(0, 1), W / 2, y0, 19, W - 8, 'pnm');
-          sprice = txt(loc, W / 2, hasBand ? 104 : 112, '$' + s.price, { class: 'sprice' });
+          const pl = PHONE[i] || [s.short.toUpperCase()], ph = el('g', { class: 'pprint' }, grp);
+          const ln = hasBand ? pl : pl.slice(0, 1);
+          let x, y, py, maxW;
+          if (g.side === 'bottom' || g.side === 'top') {
+            x = g.x + W / 2; maxW = W - 8;
+            if (hasBand) { const a = g.side === 'bottom' ? g.y + BAND : g.y + 20; y = a + 22; py = a + 78; }
+            else if (g.side === 'bottom') { y = g.y + 21; py = g.y + 112; }
+            else { y = g.y + 38; py = g.y + 130; }
+          } else {
+            // a side space is wide and low on screen: the name runs across it, the price under it
+            const a0 = g.side === 'left' ? g.x + 20 : g.x + (hasBand ? BAND : 0), a1 = g.side === 'left' ? g.x + (hasBand ? C - BAND : C) : g.x + C - 20;
+            x = (a0 + a1) / 2; maxW = a1 - a0 - 8;
+            if (!hasBand) { y = g.y + 19; py = g.y + 77; grp.classList.add('ruh'); }
+            else if (ln.length > 1) { y = g.y + 24; py = g.y + 70; }
+            else { y = g.y + 30; py = g.y + 62; }
+          }
+          printLines(ph, ln, x, y, 19, maxW, 'pnm');
+          sprice = txt(grp, x, py, '$' + s.price, { class: 'sprice' });
           sprice.pp = ph;
         }
         om = el('rect', { class: 'ownmark', visibility: 'hidden', x: 3, y: C - 11, width: W - 6, height: 9 }, loc);
@@ -216,13 +231,14 @@
 
   // opts: { heat: [0..1]|null, values: [str]|null, own, colors, tokens: [{id, pos, color, jail, turn}], selected }
   function update(view, opts) {
-    const small = view.svg.getBoundingClientRect().width < 560;
+    // layout width, not the on-screen one: the phone camera zooms the board with a transform
+    const small = (view.svg.parentNode.offsetWidth || view.svg.getBoundingClientRect().width) < 560;
     view.svg.classList.toggle('board-small', small);
     if (view.small !== small) {
       view.small = small;
       // phone: thicker owner strips so the owner can be seen at a glance
       for (const q of view.sqs) {
-        if (!q.isCorner) { q.om.setAttribute('y', C - (small ? 20 : 11)); q.om.setAttribute('height', small ? 18 : 9); }
+        if (!q.isCorner) { q.om.setAttribute('y', C - (small ? 20 : 15)); q.om.setAttribute('height', small ? 18 : 13); }
         q.hk = null;
       }
       for (const id in view.tokens) view.tokens[id].fig.setAttribute('transform', `scale(${small ? 1.45 : 1.05})`);
@@ -278,15 +294,26 @@
     for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; house(W / 2 + off, hs, across ? hs * 0.9 : hs, '#2e9d4e', '#0f4a22'); }
   }
 
+  // where a piece stands: several pieces on one space are spread over the whole space in a grid
+  // that suits its shape (2 across on the tall bottom/top spaces, 3 across on the side ones),
+  // so they stay on their own space and overlap as little as the space allows
   function tokenXY(view, pos, slot, count, jail, small) {
-    const q = view.sqs[pos];
-    let cx = q.cx, cy = q.cy;
-    if (q.isCorner && pos !== 10) cy += small ? 30 : 26;
-    if (pos === 10) { if (jail) { cx = q.g.x + 92; cy = q.g.y + 44; } else { cx = q.g.x + 30; cy = q.g.y + 92; } }
-    const sp = small ? 30 : 24;
-    const cols = Math.min(3, count), row = Math.floor(slot / 3), col = slot % 3;
-    const dx = (col - (cols - 1) / 2) * sp, dy = (row - (Math.ceil(count / 3) - 1) / 2) * sp + (q.isCorner ? 0 : 6);
-    return [cx + dx, cy + dy];
+    const q = view.sqs[pos], k = small ? 1 : 0.72; // piece base is ~44 units wide on a phone, ~32 on a laptop
+    if (pos === 10 && !jail) {
+      // just visiting: along the outer L of the jail corner, bottom edge first, then up the left edge
+      const L = [[30, 112], [64, 116], [98, 116], [22, 78], [22, 46], [22, 16], [120, 120], [50, 92]];
+      const [x, y] = L[slot % L.length];
+      return [q.g.x + x, q.g.y + y];
+    }
+    let cx = q.cx, cy = q.cy, cols, spx, spy, room;
+    if (pos === 10) { cx = q.g.x + 88; cy = q.g.y + 44; cols = 2; spx = 40 * k; room = 70; }
+    else if (q.isCorner) { cy += small ? 30 : 26; cols = 3; spx = 42 * k; room = 60; }
+    else if (q.side === 'top' || q.side === 'bottom') { cols = 2; spx = 37 * k; room = 84; cy += 6; }
+    else { cols = 3; spx = 44 * k; room = 52; cx = q.g.x + C / 2; }
+    cols = Math.min(cols, count);
+    const rows = Math.ceil(count / cols), row = Math.floor(slot / cols), col = slot % cols;
+    spy = rows > 1 ? Math.min(30 * k, room / (rows - 1)) : 0;
+    return [cx + (col - (cols - 1) / 2) * spx, cy + (row - (rows - 1) / 2) * spy];
   }
 
   // CSS transform (not the SVG attribute) so the browser can glide the piece between squares

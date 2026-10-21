@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.7 · 2026-10-20';
+  const VERSION = 'v1.8 · 2026-10-21';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -135,11 +135,13 @@
     const wide = innerWidth >= 900;
     const land = !wide && innerWidth > innerHeight * 1.2;
     document.body.classList.toggle('land', land);
-    const head = wide ? 56 : 44, tab = wide ? 0 : $('tabsBottom').offsetHeight || 58;
+    // a phone held sideways hides the title bar during a game (css), so the board gets that height
+    const head = wide ? 56 : playing && land ? 0 : 44, tab = wide ? 0 : $('tabsBottom').offsetHeight || 58;
     let size;
-    if (wide && playing) size = Math.min(innerHeight - head - 32 - MINE_HW - 10, innerWidth - 40 - SEATS_W - SIDE_W - 36);
+    // laptop: the board takes the whole height; your area sits in the right column
+    if (wide && playing) size = Math.min(innerHeight - head - 32, innerWidth - 40 - SEATS_W - SIDE_W - 36);
     else if (wide) size = Math.min(innerHeight - head - 32, innerWidth - 500 - 64);
-    else if (playing && land) size = Math.min(innerHeight - head - tab - 12, innerWidth * 0.46);
+    else if (playing && land) size = Math.min(innerHeight - head - tab - 12, innerWidth * 0.5);
     else if (playing) size = Math.min(innerWidth - 16, innerHeight - head - tab - 8 - SEATS_H - MINE_H - 16);
     else size = Math.min(innerWidth - 16, innerHeight - head - tab - 16 - 190);
     size = Math.max(playing ? 200 : 260, Math.floor(size));
@@ -804,7 +806,7 @@
       const btns = `${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${act ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${act ? '' : 'disabled'}>Trade</button>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`;
       if (me < 0) return `<div class="mbar"><span class="csub">Computers only</span><span class="grow"></span>${btns}</div>`;
       const p = st.players[me];
-      const avail = wide ? $('boardWrap').offsetWidth - 190 : land ? innerWidth * 0.3 - 20 : innerWidth - 16 - 150;
+      const avail = wide ? SIDE_W - 24 : land ? innerWidth * 0.3 - 20 : innerWidth - 16 - 150;
       const dw = deedWidth(st, me, avail, wide ? 44 : 36, 16);
       return `<div class="mrow"style="--pc:${COLORS[me]};--dw:${dw}px">
           <div class="mdeeds" data-act="pinfo" data-k="${me}" role="button" aria-label="Your deeds">${deedsHTML(st, me) || '<span class="tbl-spot dspot"></span>'}${jailCards(p)}</div>
@@ -1083,6 +1085,7 @@
     $('seats').hidden = !playing; $('mine').hidden = !playing;
     if (playing) { setHTML($('seats'), Play.seats()); setHTML($('mine'), Play.mine()); }
     BoardView.update(BV, Object.assign({ heat: null, values: null, own: null, colors: null, tokens: [] }, sc.board()));
+    camera();
     drawDecks();
     const ch = sc.center();
     if (ch !== render.center) { render.center = ch; render.centerAt = Date.now(); }
@@ -1137,7 +1140,8 @@
     const st = S.tab === 'play' && G ? G : null;
     [['chance', 'deckChance'], ['chest', 'deckChest']].forEach(([d, id]) => {
       const n = st && st.decks && st.decks[d] ? st.decks[d].length : 16, el = $(id);
-      el.hidden = S.tab !== 'play'; // the helper tabs keep the middle clear for their numbers
+      // the helper tabs keep the middle clear for their numbers; the zoomed phone board puts the decks away
+      el.hidden = S.tab !== 'play' || $('boardWrap').classList.contains('zoomed');
       if (el.dataset.count === String(n) && el.firstChild) return;
       TABLE.deck(el, n, { pattern: 'plain', cls: 'mback ' + d, badge: false, perCard: 0.45, max: 8 });
     });
@@ -1145,10 +1149,90 @@
   // the words and buttons in the middle stay off the two decks: the decks lie on the diagonal,
   // so their inner long edges run along x + y = ±0.41 board (measured from the middle);
   // when the middle holds a lot (card + dice + buttons) it shrinks just enough to stay clear
+  // ---------------------------------------------------------------- phone camera
+  // On a phone the whole board is ~375 px wide, so names, prices, houses and pieces are 5-8 px.
+  // During a game the board is shown at about twice the size, looking at the side of the board
+  // where the action is (the piece whose turn it is, or the lot being bought or auctioned); the
+  // round button in the middle switches to the whole board and back (remembered on this device).
+  const ZOOM_ICON = {
+    out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+    in: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5 5M10.5 8v5M8 10.5h5"/></svg>',
+  };
+  function miniMap(x0, y0, V) {
+    let h = '<svg class="mmap" viewBox="-2 -2 104 104" aria-hidden="true"><rect x="-2" y="-2" width="104" height="104" rx="3" fill="#17201a"/><rect x="0" y="0" width="100" height="100" fill="#d3e7d3"/>';
+    for (let i = 0; i < 40; i++) {
+      const g = BoardView.geom(i), o = G.own[i];
+      const fill = o && o.owner >= 0 ? COLORS[o.owner] : SQ[i].type === 'prop' ? '#d3e7d3' : '#c2d6c2';
+      h += `<rect x="${(g.x / 10).toFixed(1)}" y="${(g.y / 10).toFixed(1)}" width="${(g.w / 10).toFixed(1)}" height="${(g.h / 10).toFixed(1)}" fill="${fill}"${o && o.mort ? ' fill-opacity=".45"' : ''} stroke="#17201a" stroke-width=".4"/>`;
+    }
+    // pieces: a dot in the player's colour; several on one space sit side by side
+    const at = {};
+    G.players.forEach((p, k) => {
+      if (p.out) return;
+      const key = p.pos + (p.jail ? 'j' : ''), n = (at[key] = (at[key] || 0) + 1) - 1, q = BV.sqs[p.pos];
+      let x = q.cx / 10, y = q.cy / 10;
+      if (p.pos === 10) { x = (q.g.x + (p.jail ? 88 : 50)) / 10; y = (q.g.y + (p.jail ? 44 : 118)) / 10; }
+      x += (n % 3 - 1) * 3.2; y += Math.floor(n / 3) * 3.2 * (p.pos === 10 && !p.jail ? -1 : 1);
+      h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${k === G.turn ? 3.4 : 2.9}" fill="${COLORS[k]}" stroke="${k === G.turn ? '#fff' : '#17201a'}" stroke-width=".8"/>`;
+    });
+    h += `<rect x="${(x0 / 10).toFixed(1)}" y="${(y0 / 10).toFixed(1)}" width="${(V / 10).toFixed(1)}" height="${(V / 10).toFixed(1)}" fill="none" stroke="#e0413a" stroke-width="1.6"/></svg>`;
+    return h;
+  }
+  function camFocus() {
+    if (G.phase === 'buy') return G.pendingBuy;
+    if (G.phase === 'auction') return G.auction.sq;
+    const p = G.players[G.turn];
+    return p ? p.pos : 0;
+  }
+  function camera() {
+    const wrap = $('boardWrap'), cam = $('cam'), box = $('cbox'), zb = $('zoomBtn');
+    const bw = wrap.offsetWidth;
+    const can = S.tab === 'play' && !!G && G.phase !== 'over' && bw > 0 && bw < 560;
+    const on = can && S.settings.zoom !== false;
+    zb.hidden = !can;
+    if (can && !on && zb.dataset.k !== 'in') { zb.dataset.k = 'in'; zb.innerHTML = ZOOM_ICON.in; zb.setAttribute('aria-label', 'Zoom in'); }
+    wrap.classList.toggle('zoomed', on);
+    if (!on) { box.dataset.k = ''; cam.style.transform = ''; box.style.left = box.style.top = box.style.width = box.style.height = ''; return; }
+    // zoom so the phone street names come out at ~12.5 px (19 board units each)
+    const z = clamp(12.5 / (19 * bw / 1000), 1.6, 2.4), V = 1000 / z;
+    const i = camFocus(), q = BV.sqs[i], side = BoardView.geom(i).side;
+    let x0 = clamp(q.cx - V / 2, 0, 1000 - V), y0 = clamp(q.cy - V / 2, 0, 1000 - V);
+    // keep the row the action is on against the edge of the view, so the free middle is one block
+    if (side === 'bottom' || i === 0 || i === 10) y0 = 1000 - V;
+    if (side === 'top' || i === 20 || i === 30) y0 = 0;
+    if (side === 'left' || i === 10 || i === 20) x0 = 0;
+    if (side === 'right' || i === 0 || i === 30) x0 = 1000 - V;
+    const px = bw / 1000;
+    // opening the page (or a reload) starts already zoomed; only later moves glide
+    if (!camera.shown) {
+      camera.shown = true;
+      cam.style.transition = box.style.transition = 'none';
+      requestAnimationFrame(() => requestAnimationFrame(() => { cam.style.transition = box.style.transition = ''; }));
+    }
+    cam.style.transform = `translate(${(-x0 * z * px).toFixed(1)}px, ${(-y0 * z * px).toFixed(1)}px) scale(${z.toFixed(3)})`;
+    // the dice, card and buttons go on the part of the middle that is in view
+    const F0 = 136, F1 = 864;
+    const l = Math.max(x0, F0), t = Math.max(y0, F0), r = Math.min(x0 + V, F1), b = Math.min(y0 + V, F1);
+    // the button is a little map of the whole board: who owns what, where every piece is, and
+    // the part shown big (red frame); tapping it shows the whole board
+    const mm = miniMap(x0, y0, V);
+    if (zb.dataset.k !== mm) { zb.dataset.k = mm; zb.innerHTML = mm; zb.setAttribute('aria-label', 'Whole board'); }
+    const pc = v => (v / V * 100).toFixed(2) + '%';
+    const key = [l, t, r, b].map(Math.round).join();
+    if (box.dataset.k !== key) { box.dataset.k = key; clearTimeout(camera.t); camera.t = setTimeout(fitCenter, 560); }
+    box.style.left = pc(l - x0); box.style.top = pc(t - y0); box.style.width = pc(Math.max(0, r - l)); box.style.height = pc(Math.max(0, b - t));
+  }
   function fitCenter() {
     const c = $('center');
     c.style.transform = '';
-    if (S.tab !== 'play' || !G || $('deckChance').hidden) return;
+    if (S.tab !== 'play' || !G) return;
+    if ($('boardWrap').classList.contains('zoomed')) {
+      // zoomed: the decks are put away; just make sure the middle's contents fit their space
+      const need = c.scrollHeight, have = c.clientHeight;
+      if (need > have + 1) c.style.transform = `scale(${Math.max(0.6, have / need).toFixed(3)})`;
+      return;
+    }
+    if ($('deckChance').hidden) return;
     const wrap = $('boardWrap'), bw = wrap.offsetWidth, r0 = wrap.getBoundingClientRect();
     if (!bw) return;
     const mx = r0.left + bw / 2, my = r0.top + bw / 2, lim = 0.385 * bw - 4;
@@ -1169,6 +1253,7 @@
     dealt = key;
     if (!window.TABLE || !TABLE.animOn() || !fxPrev) return; // reload / animations off: just show it
     const deck = $(c.classList.contains('chance') ? 'deckChance' : 'deckChest');
+    if (deck.hidden) { c.classList.add('flipin'); return; } // zoomed phone board: the decks are put away, the card just turns over
     dealing = key; c.style.opacity = 0;
     TABLE.deal(deck, c, { duration: 380 }).then(() => {
       dealing = '';
@@ -1211,6 +1296,7 @@
     const a = el.dataset.act;
     if (a === 'help') { toast(HELP[el.dataset.k] || '', 7000); return; }
     if (a === 'close') { closeSheet(); return; }
+    if (a === 'zoom') { S.settings.zoom = S.settings.zoom === false; save(); render(); return; }
     // a fast double tap must not land on the button that just replaced the one tapped
     // (Roll -> End turn, Buy -> End turn, Start -> Roll)
     if (el.closest('#center') && Date.now() - (render.centerAt || 0) < 350) return;
