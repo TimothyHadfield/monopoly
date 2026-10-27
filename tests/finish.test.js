@@ -35,12 +35,11 @@ function swapTable(level) {
 test('computer offers a two-way set swap that the fair-trade meter calls fair, and will not repeat it after a no', () => {
   for (const level of ['medium', 'hard']) {
     let st = swapTable(level);
-    // hard only hands over a set the other side can't build on straight away
-    if (level === 'hard') st.players[0].cash = 300;
+    // medium and hard only hand over a set the other side can't build on straight away
+    st.players[0].cash = 300;
     const tr = AI.findTrade(st, 1, level);
     assert.ok(tr, level + ' finds a trade');
-    if (level === 'medium') assert.deepStrictEqual([tr.give, tr.get], [[19], [37]], 'New York for Park Place');
-    else { // hard picks the swap where it can build and the other side can't yet: a set each way
+    { // both pick the swap where they can build and the other side can't yet: a set each way
       const after = st.own.map(o => o.owner); tr.give.forEach(i => { after[i] = 0; }); tr.get.forEach(i => { after[i] = 1; });
       const sets = who => ['orange', 'blue'].filter(g => require('../js/board.js').GROUPS[g].every(i => after[i] === who)).length;
       assert.ok(sets(0) === 1 && sets(1) === 1, 'two-way set swap: ' + JSON.stringify(tr));
@@ -97,4 +96,11 @@ test('hard beats medium one-on-one (300 games, seats swapped): at least 60%', ()
   const r = measure(300, ['hard', 'medium'], {});
   console.log('  hard vs medium 1v1: ' + (100 * r.levels.hard.winRatePerSeat).toFixed(1) + '%');
   assert.ok(r.levels.hard.winRatePerSeat >= 0.6, 'hard ' + r.levels.hard.winRatePerSeat);
+});
+
+test('medium beats easy one-on-one (400 games, seats swapped): at least 60%', () => {
+  const { measure } = require('../tools/sim.js');
+  const r = measure(400, ['medium', 'easy'], {});
+  console.log('  medium vs easy 1v1: ' + (100 * r.levels.medium.winRatePerSeat).toFixed(1) + '%');
+  assert.ok(r.levels.medium.winRatePerSeat >= 0.6, 'medium ' + r.levels.medium.winRatePerSeat);
 });

@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.9 · 2026-10-27';
+  const VERSION = 'v1.10 · 2026-10-27';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -603,19 +603,26 @@
     const r = MonoProfile.result(st, me, { helped: S.gm.helped, daily: !!S.gm.daily, acc: S.gm.acc });
     try { Profile.recordResult(S.gm.daily ? Object.assign(r, { date: S.gm.daily }) : r); } catch (e) { /* stats never break the game */ }
   }
-  // leaving an unfinished Daily game (new game, another Daily) counts it as lost, so it can't be retried
-  function abandonDaily() {
-    const m = S.gm;
-    if (!window.Profile || !m || !m.daily || m.recorded || !S.game || S.game.phase === 'over') return;
+  // leaving an unfinished game against the computers (New game, Daily, guided game) counts it as lost,
+  // so a bad game can't be dropped (and a Daily can't be retried). Not the guided game, pass-and-play or a game nobody has thrown in yet.
+  function abandonGame() {
+    const m = S.gm, st = S.game;
+    if (NETS || !window.Profile || !window.MonoProfile || !m || m.recorded || m.tutorial || !st || st.phase === 'over' || m.id !== st.startId) return;
+    if (!st.dice && !st.turns) return;
+    const me = soloSeat(st);
+    if (me < 0) return;
+    const r = MonoProfile.result(st, me, { helped: m.helped, daily: !!m.daily, acc: m.acc });
+    if (r.mode === 'friends') return;
     m.recorded = true;
-    try { Profile.recordResult({ mode: m.helped ? 'help' : 'computer', level: m.helped ? null : 'hard', won: false, daily: true, date: m.daily }); } catch (e) { /* ignore */ }
-    toast('Daily game left: counted as a loss');
+    r.won = false; r.draw = false; r.extra.quit = true;
+    try { Profile.recordResult(m.daily ? Object.assign(r, { date: m.daily }) : r); } catch (e) { /* stats never break the game */ }
+    toast((m.daily ? 'Daily game' : 'Game') + ' left: counted as a loss');
   }
   const rulesFrom = r => ({ auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100, startCash: r.startCash || 1500, noJailRent: !!r.noJailRent });
   // a new local game; opts: { seed, tutorial, daily: 'YYYY-MM-DD' }
   function startGame(seats, rules, opts) {
     opts = opts || {};
-    abandonDaily();
+    abandonGame();
     closeSheet(); if (window.COACH) COACH.closeOffer();
     gen++; clearTimeout(timer); lastDiceKey = ''; Play.rp = null; clearTimeout(Play.rpT);
     const nm = uniqueNames(seats.map(s => s.name));
@@ -1085,7 +1092,7 @@
           Play.armed = 0;
         }
         // falls through
-        case 'newgameNow': abandonDaily(); closeSheet(); gen++; clearTimeout(timer); clearTimeout(Play.rpT); setGame(null); render(); offerTutorial(); return;
+        case 'newgameNow': abandonGame(); closeSheet(); gen++; clearTimeout(timer); clearTimeout(Play.rpT); setGame(null); render(); offerTutorial(); return;
         case 'netcreate': {
           const mine = su.seats.findIndex(x => x.kind === 'human');
           const name = (su.seats[mine >= 0 ? mine : 0].name || 'Player').slice(0, 12);
@@ -1382,9 +1389,14 @@
   function fitCenter() {
     const c = $('center');
     c.style.transform = '';
+    c.classList.remove('tight');
     if (S.tab !== 'play' || !G) return;
     if ($('boardWrap').classList.contains('zoomed')) {
-      // zoomed: the decks are put away; just make sure the middle's contents fit their space
+      // zoomed: the decks are put away; just make sure the middle's contents fit their space.
+      // Too tall under the mini-map (small phones, phones on their side): the text flows beside it instead.
+      c.style.justifyContent = 'flex-start';   // so an overflow at the top is measured too
+      if (c.scrollHeight > c.clientHeight + 1) c.classList.add('tight');
+      c.style.justifyContent = '';
       const need = c.scrollHeight, have = c.clientHeight;
       if (need > have + 1) c.style.transform = `scale(${Math.max(0.6, have / need).toFixed(3)})`;
       return;

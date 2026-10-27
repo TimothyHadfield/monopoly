@@ -1,6 +1,7 @@
 // Computer players. choose(state, seat) -> { action, why }.
 // easy: buys on a whim, builds late, never trades.
-// medium: buys what it can afford, builds evenly, offers and accepts fair set-finishing trades.
+// medium: buys what it can afford, builds evenly, offers and accepts fair set-finishing trades
+//         (only ones where it can afford to build more than the other side).
 // hard: uses the landing odds: buys and bids by value, builds the best payback (mortgaging loose lots to reach 3 houses),
 //       first up to 3 houses, keeps a cash cushion sized to the danger ahead,
 //       pays out of jail early but stays in late, and only trades sets it can afford to build (weighing whether the
@@ -15,7 +16,9 @@
 
   const R = Math.random;
   // knobs for strength experiments (tools/sim.js); the shipped values are the defaults
-  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false, mortBuild: true, realTrade: true, realTheirs: 1.5, realMin: 0, realJudge: true, stuckRound: 40 };
+  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false, mortBuild: true, realTrade: true, realTheirs: 1.5, realMin: 0, realJudge: true, stuckRound: 40, medReserve: 200, medReal: true };
+  // medReal: Medium also weighs a trade by whether each side can pay for houses on its new set (as Hard does);
+  // with medReserve 200 (was 300) this lifted Medium vs Easy one-on-one from 45% to 67% (1,000 games, 2026-10-27).
   const A = (action, why) => ({ action, why: why || '' });
 
   function unowned(st) { return st.own.filter((o, i) => SQ[i].group && o.owner < 0).length; }
@@ -187,7 +190,7 @@
           // hard also asks: does this hand the other side more than it hands me?
           if (level === 'hard' && b1 > a1 + 50) continue;
           let score = a1;
-          if (level === 'hard' && cfg.realTrade && st.round <= cfg.stuckRound) {
+          if ((level === 'hard' || cfg.medReal) && cfg.realTrade && st.round <= cfg.stuckRound) {
             // a set only pays once it has houses: weigh each side's gain by whether they can pay to build
             const owners = {}; give.forEach(i => { owners[i] = them; }); get.forEach(i => { owners[i] = me; });
             const fa = buildPower(st, me, owners, -cash), fb = buildPower(st, them, owners, cash);
@@ -254,7 +257,7 @@
       }
       // management
       if (level !== 'easy') {
-        const reserve = level === 'hard' ? cushion(st, me) * cfg.reserve : 300;
+        const reserve = level === 'hard' ? cushion(st, me) * cfg.reserve : cfg.medReserve;
         const builds = Money.houseOptions(st, me, 'stay').filter(o => o.afford && leg.some(a => a.type === 'build' && a.sq === o.sq));
         if (level === 'hard') {
           // best payback first, prefer getting every set to 3 houses

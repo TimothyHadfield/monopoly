@@ -2,13 +2,12 @@
 // The computer levels' ratings, the achievement list, today's Daily game and turning a finished game into a result.
 (function (root) {
   'use strict';
-  // Elo of each level. Hard beats Medium 68.4% one-on-one (docs/sim-hard-medium-2p-v2.json, 1,000 games,
-  // 2026-10-27): +134. Medium vs Easy one-on-one is luck-heavy (Medium 44%, though Medium wins 78% against
-  // three Easy computers), so Medium is set 100 above Easy by judgement. Easy anchored at 1200.
+  // Elo of each level from one-on-one games (tools/sim.js, 1,000 games each, seats swapped, 2026-10-27):
+  // Medium beats Easy 70.8% (+150), Hard beats Medium 66.7% (+120). Easy anchored at 1200.
   const LEVELS = [
     { id: 'easy', name: 'Easy', rating: 1200 },
-    { id: 'medium', name: 'Medium', rating: 1300 },
-    { id: 'hard', name: 'Hard', rating: 1435 },
+    { id: 'medium', name: 'Medium', rating: 1350 },
+    { id: 'hard', name: 'Hard', rating: 1470 },
   ];
   const RANK = { easy: 0, medium: 1, hard: 2 };
   const won = c => !!(c.last && c.last.won);
