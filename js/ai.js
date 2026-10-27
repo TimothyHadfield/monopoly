@@ -1,9 +1,10 @@
 // Computer players. choose(state, seat) -> { action, why }.
 // easy: buys on a whim, builds late, never trades.
 // medium: buys what it can afford, builds evenly, offers and accepts fair set-finishing trades.
-// hard: uses the landing odds: buys and bids by value, builds the best payback
+// hard: uses the landing odds: buys and bids by value, builds the best payback (mortgaging loose lots to reach 3 houses),
 //       first up to 3 houses, keeps a cash cushion sized to the danger ahead,
-//       pays out of jail early but stays in late, and offers trades that finish sets.
+//       pays out of jail early but stays in late, and only trades sets it can afford to build (weighing whether the
+//       other side can afford theirs).
 (function (root) {
   'use strict';
   const node = typeof module !== 'undefined' && module.exports;
@@ -14,7 +15,7 @@
 
   const R = Math.random;
   // knobs for strength experiments (tools/sim.js); the shipped values are the defaults
-  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false };
+  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false, mortBuild: true, realTrade: true, realTheirs: 1.5, realMin: 0, realJudge: true, stuckRound: 40 };
   const A = (action, why) => ({ action, why: why || '' });
 
   function unowned(st) { return st.own.filter((o, i) => SQ[i].group && o.owner < 0).length; }
@@ -52,6 +53,44 @@
       landCache = s.land.map(v => 0.75 + 0.25 * (v / avg));
     }
     return landCache[sq];
+  }
+
+  // ---------------------------------------------------------------- hard: money for houses
+  // a full, unmortgaged colour set of mine still under 3 houses a lot
+  function wantsHouses(st, me) {
+    return Object.keys(GROUPS).some(g => g !== 'rr' && g !== 'util' && Money.ownsGroup(st, me, g)
+      && GROUPS[g].every(i => !st.own[i].mort) && GROUPS[g].some(i => st.own[i].houses < 3));
+  }
+  // lots I can mortgage without hurting a set I build on (loose lots, railroads, utilities)
+  function looseMortgages(st, me, leg) {
+    return leg.filter(a => a.type === 'mortgage' && !(SQ[a.sq].type === 'prop' && Money.ownsGroup(st, me, SQ[a.sq].group)))
+      .map(a => ({ sq: a.sq, loss: Money.rentPerTurn(st, a.sq, 'stay') / (SQ[a.sq].price / 2) }))
+      .sort((x, y) => x.loss - y.loss);
+  }
+  function mortgageToBuild(st, me, leg, reserve) {
+    const p = st.players[me];
+    const want = Money.houseOptions(st, me, 'stay').filter(o => o.next <= 3 && p.cash - o.cost < reserve);
+    if (!want.length) return null;
+    const ms = looseMortgages(st, me, leg);
+    if (!ms.length) return null;
+    const raise = ms.reduce((s, m) => s + SQ[m.sq].price / 2, 0);
+    if (p.cash + raise - want[0].cost < reserve) return null; // can't reach even one house: keep the lots
+    return A({ type: 'mortgage', seat: me, sq: ms[0].sq }, `Mortgage ${SQ[ms[0].sq].name} to pay for houses.`);
+  }
+  // what it costs to bring every set I'd own after a trade to 3 houses, and what I could pay
+  function buildPower(st, who, owners, cashDelta) {
+    let need = 0, funds = st.players[who].cash + cashDelta;
+    const ownerOf = i => (owners[i] != null ? owners[i] : st.own[i].owner);
+    for (const g of Object.keys(GROUPS)) {
+      if (g === 'rr' || g === 'util') continue;
+      const all = GROUPS[g].every(i => ownerOf(i) === who);
+      GROUPS[g].forEach(i => {
+        if (ownerOf(i) !== who) return;
+        if (all) { need += Math.max(0, 3 - st.own[i].houses) * SQ[i].house; if (st.own[i].mort) need += Engine.unmortgageCost(i); }
+        else if (!st.own[i].mort) funds += SQ[i].price / 2;
+      });
+    }
+    return need ? Math.max(0, Math.min(1, funds / need)) : 1;
   }
 
   // ---------------------------------------------------------------- debts
@@ -94,6 +133,12 @@
       const theyGain = setsFor(tr.from, after) > setsFor(tr.from, {}), iGain = setsFor(me, after) > setsFor(me, {});
       if (theyGain && !iGain) ok = mine > 0 && mine >= theirs + cfg.blockPremium * Math.abs(theirs);
       else ok = mine > 0 && mine >= theirs - cfg.swapSlack;
+      if (ok && cfg.realJudge && theyGain && st.round <= cfg.stuckRound) {
+        // their new set only hurts once they can pay for houses on it; mine only helps if I can
+        const owners = {}; tr.give.forEach(i => { owners[i] = me; }); tr.get.forEach(i => { owners[i] = tr.from; });
+        const fMe = buildPower(st, me, owners, tr.giveCash - tr.getCash), fThem = buildPower(st, tr.from, owners, tr.getCash - tr.giveCash);
+        ok = mine * fMe - Math.max(0, theirs) * fThem * cfg.realTheirs > 0;
+      }
     } else ok = mine >= theirs - 50 && mine > -50;
     return A({ type: ok ? 'accept' : 'reject', seat: me }, ok ? 'Fair or better for me.' : 'Not worth it for me.');
   }
@@ -141,7 +186,15 @@
           if (a1 <= 0 || b1 < a1 - 50 || b1 < -25) continue;
           // hard also asks: does this hand the other side more than it hands me?
           if (level === 'hard' && b1 > a1 + 50) continue;
-          if (!best || a1 > best.a1) best = { a1, to: them, give, get, cash };
+          let score = a1;
+          if (level === 'hard' && cfg.realTrade && st.round <= cfg.stuckRound) {
+            // a set only pays once it has houses: weigh each side's gain by whether they can pay to build
+            const owners = {}; give.forEach(i => { owners[i] = them; }); get.forEach(i => { owners[i] = me; });
+            const fa = buildPower(st, me, owners, -cash), fb = buildPower(st, them, owners, cash);
+            score = a1 * fa - Math.max(0, b1) * fb * cfg.realTheirs;
+            if (score <= cfg.realMin) continue;
+          }
+          if (!best || score > best.score) best = { a1, score, to: them, give, get, cash };
         }
       }
     }
@@ -208,7 +261,12 @@
           const pick = builds.filter(o => o.next <= 3).concat(builds.filter(o => o.next > 3))
             .find(o => p.cash - o.cost >= reserve);
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, `Build on ${SQ[pick.sq].name}: pays back in ${Math.max(1, Math.round(pick.payback))} rounds.`);
-          const um = leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
+          // short of cash for a set's first 3 houses: mortgage loose lots to pay for them
+          if (cfg.mortBuild) {
+            const mb = mortgageToBuild(st, me, leg, reserve);
+            if (mb) return mb;
+          }
+          const um = !(cfg.mortBuild && wantsHouses(st, me)) && leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
           if (um) return A({ ...um, seat: me }, 'Spare cash: pay off a mortgage.');
 
         } else {

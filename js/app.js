@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.8 · 2026-10-21';
+  const VERSION = 'v1.9 · 2026-10-27';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -13,7 +13,7 @@
   };
   function defaults() {
     return {
-      tab: 'odds',
+      tab: 'play', // a first visit opens on Play (2026-10-27: it used to open on the Odds tab)
       settings: { jail: 'stay', rounds: 10, coach: true, speed: 'normal' },
       odds: { metric: 'land', sel: 24 },
       table: {
@@ -1068,10 +1068,11 @@
   // measured in tools/sim.js; numbers filled in from progress.md
   const STRENGTH = `<p class="csub" style="margin:2px 2px 8px">Win rate over 1,000 computer-only games each (a fair share is 25% at a 4-seat table, 50% one-on-one).</p>
     <table class="t"><tr><th>Table</th><th>Win rate</th></tr>
-    <tr><td>Hard vs 3 Medium</td><td>Hard 32%</td></tr>
+    <tr><td>Hard vs Medium, 2 seats</td><td>Hard 68%</td></tr>
+    <tr><td>Hard vs 3 Medium</td><td>Hard 38%</td></tr>
     <tr><td>Medium vs 3 Easy</td><td>Medium 78%</td></tr>
-    <tr><td>Hard, Medium, 2 Easy</td><td>59% · 31% · 5% each</td></tr>
-    <tr><td>Hard vs Easy, 2 seats</td><td>Hard 64%</td></tr></table>`;
+    <tr><td>Hard, Medium, 2 Easy</td><td>63% · 29% · 4% each</td></tr>
+    <tr><td>Hard vs Easy, 2 seats</td><td>Hard 79%</td></tr></table>`;
 
   const SCREENS = { odds: Odds, table: Table, trade: Trade, play: Play, settings: Settings };
 
@@ -1358,6 +1359,14 @@
     render(); pump();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pump(); });
+  // home-screen app (js/pwa.js, shared _pwa kit): a new deploy reloads by itself only when nothing would be lost
+  if (window.PWA) window.PWA.safeToReload = () => {
+    const ae = document.activeElement;
+    if (NET || NETS || netBusy || netResuming || sheetOpen || (window.COACH && COACH.rulesOpen())) return false;
+    if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return false;
+    return S.tab === 'settings' || S.tab === 'odds' || !S.game || S.game.phase === 'over';
+  };
+  window.MonoApp = { get S() { return S; }, get G() { return G; }, Play, doAction, render, save }; // for tests / debugging
   let rt = null;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { layout(); render(); }, 120); });
   // the trade tab's result block gets the same wrapper so typing cash doesn't redraw inputs

@@ -1,0 +1,10 @@
+{
+  "repo": "monopoly",
+  "ready": "!!(window.MonoApp && document.querySelector('#center') && document.querySelector('#board g'))",
+  "play": [
+    "(async () => { const w = ms => new Promise(r => setTimeout(r, ms)); const A = MonoApp; A.S.settings.speed = 'fast'; A.S.setup.seats = [{ name: 'You', kind: 'human' }, { name: 'Ada', kind: 'cpu', level: 'easy' }]; A.save(); A.render(); await w(300); document.querySelector('[data-act=start]').click(); await w(500); window.__turnsBefore = A.S.game.turns; for (let i = 0; i < 40; i++) { const G = A.S.game; const me = Engine.actor(G) === 0; if (me && G.phase === 'roll') A.doAction({ type: 'roll', seat: 0 }, true); else if (me && G.phase === 'buy') A.doAction({ type: G.players[0].cash >= 400 ? 'buy' : 'decline', seat: 0 }, true); else if (me && G.phase === 'auction') A.doAction({ type: 'pass', seat: 0 }, true); else if (me && G.phase === 'debt') A.doAction({ type: G.players[0].cash >= G.debts[0].amount ? 'payDebt' : 'bankrupt', seat: 0 }, true); else if (me && G.phase === 'end') { A.doAction({ type: 'end', seat: 0 }, true); break; } await w(150); } })()"
+  ],
+  "played": "(() => { const G = MonoApp.S.game; return !!G && G.turns >= window.__turnsBefore + 2 && Engine.actor(G) === 0 && G.phase === 'roll'; })()",
+  "safe": "document.querySelector('#tabsBottom [data-tab=settings], #tabsTop [data-tab=settings]').click()",
+  "debug": "JSON.stringify((() => { const G = MonoApp.S.game; return G ? { turns: G.turns, before: window.__turnsBefore, turn: G.turn, phase: G.phase, log: G.log.slice(-3) } : null; })())"
+}
