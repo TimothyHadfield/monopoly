@@ -276,7 +276,9 @@
   function drawHouses(q, n, mort, small) {
     const key = n + (mort ? 'm' : '') + (small ? 's' : '');
     if (q.hk === key) return;
-    q.hk = key;
+    // a newly built house or hotel drops onto the band (not on the first draw, a reload or a sale)
+    const was = q.hn || 0, grew = q.hk !== undefined && !mort && n > was && moving();
+    q.hk = key; q.hn = mort ? 0 : n;
     q.houses.innerHTML = '';
     if (q.up) q.up.innerHTML = '';
     if (!q.band) return;
@@ -286,12 +288,18 @@
     const house = (lx, w, h, fill, dark) => {
       const [bx, by] = q.map(lx, BAND / 2);
       const x0 = bx - w / 2, yb = by + h * 0.55, ym = yb - h * 0.6, yt = ym - h * 0.5;
-      el('path', { class: 'house', d: `M${x0} ${yb} V${ym} L${bx} ${yt} L${x0 + w} ${ym} V${yb} Z`, fill }, q.up);
-      el('path', { d: `M${bx} ${yt} L${x0 + w} ${ym} V${yb} H${bx} Z`, fill: dark, opacity: 0.55 }, q.up);
+      const pg = el('g', { class: 'hpiece' }, q.up);
+      el('path', { class: 'house', d: `M${x0} ${yb} V${ym} L${bx} ${yt} L${x0 + w} ${ym} V${yb} Z`, fill }, pg);
+      el('path', { d: `M${bx} ${yt} L${x0 + w} ${ym} V${yb} H${bx} Z`, fill: dark, opacity: 0.55 }, pg);
+      return pg;
+    };
+    const drop = (pg, k) => {
+      if (!pg || !pg.animate) return;
+      pg.animate([{ transform: 'translateY(-34px) scale(1.25)', opacity: 0 }, { opacity: 1, offset: 0.35 }, { transform: 'translateY(3px) scale(1.08, .9)', offset: 0.75 }, { transform: 'none', opacity: 1 }], { duration: 520 * speed(), delay: k * 90 * speed(), easing: 'cubic-bezier(.4,0,.6,1)', fill: 'backwards' });
     };
     // a hotel on a side column is seen end-on from your seat, so it is drawn narrower
-    if (n === 5) { const w = across ? hs * 1.35 : small ? 46 : 40; house(W / 2, w, hs * (across ? 1.25 : 1), '#d4352e', '#7a1612'); return; }
-    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; house(W / 2 + off, hs, across ? hs * 0.9 : hs, '#2e9d4e', '#0f4a22'); }
+    if (n === 5) { const w = across ? hs * 1.35 : small ? 46 : 40; const pg = house(W / 2, w, hs * (across ? 1.25 : 1), '#d4352e', '#7a1612'); if (grew) drop(pg, 0); return; }
+    for (let k = 0; k < n; k++) { const off = (k - (n - 1) / 2) * gap; const pg = house(W / 2 + off, hs, across ? hs * 0.9 : hs, '#2e9d4e', '#0f4a22'); if (grew && k >= was) drop(pg, k - was); }
   }
 
   // where a piece stands: several pieces on one space are spread over the whole space in a grid
@@ -318,7 +326,9 @@
 
   // CSS transform (not the SVG attribute) so the browser can glide the piece between squares
   // Settings > Animations: 1 normal, 0.5 fast, 0 off (pieces jump straight to their square)
-  const speed = () => { const v = root.BoardView && root.BoardView.speed; return v == null ? 1 : v; };
+  const reduced = () => !!(root.matchMedia && root.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const speed = () => { const v = root.BoardView && root.BoardView.speed; return reduced() ? 0 : v == null ? 1 : v; };
+  const moving = () => speed() > 0;
   function place(tk, x, y, ms) {
     ms = ms * speed();
     tk.g.style.transition = ms ? `transform ${ms}ms cubic-bezier(.3,.7,.4,1)` : 'none';
@@ -348,13 +358,14 @@
       if (!tk) {
         const g = el('g', { class: 'token' }, view.tokLayer);
         const fig = el('g', { transform: `scale(${small ? 1.45 : 1.05})` }, g);
-        el('ellipse', { class: 'shadow', cx: 2, cy: 9, rx: 17, ry: 6 }, fig);
-        el('ellipse', { class: 'base', cx: 0, cy: 6, rx: 15, ry: 6, fill: t.color }, fig);
+        const shadow = el('ellipse', { class: 'shadow', cx: 2, cy: 9, rx: 17, ry: 6 }, fig);
+        const lift = el('g', { class: 'lift' }, fig); // the piece itself: it hops over each square while its shadow stays down
+        el('ellipse', { class: 'base', cx: 0, cy: 6, rx: 15, ry: 6, fill: t.color }, lift);
         const n = (+String(t.id).replace(/\D/g, '') || 0) % FIGS.length;
-        el('path', { class: 'pewter', d: FIGS[n], transform: 'translate(0 6)' }, fig);
-        if (n === 1) [-8, 8].forEach(x => el('circle', { class: 'pewter', cx: x, cy: 5, r: 3.5 }, fig));
-        if (n === 6) el('circle', { class: 'pewter', cx: 8, cy: 3, r: 4 }, fig);
-        tk = view.tokens[t.id] = { g, fig, pos: t.pos, jail: t.jail };
+        el('path', { class: 'pewter', d: FIGS[n], transform: 'translate(0 6)' }, lift);
+        if (n === 1) [-8, 8].forEach(x => el('circle', { class: 'pewter', cx: x, cy: 5, r: 3.5 }, lift));
+        if (n === 6) el('circle', { class: 'pewter', cx: 8, cy: 3, r: 4 }, lift);
+        tk = view.tokens[t.id] = { g, fig, lift, shadow, pos: t.pos, jail: t.jail };
         const [x, y] = tokenXY(view, t.pos, slot, count, t.jail, small);
         place(tk, x, y, 0);
       }
@@ -379,16 +390,37 @@
     for (let k = 0; k < n; k++) { p = (p + 1) % 40; steps.push(p); }
     tk.busy = true; tk.final = dest;
     const per = Math.max(60, Math.min(120, 1100 / steps.length)) * speed();
+    tilt(view, 1);
     let k = 0;
     const tick = () => {
-      if (k >= steps.length) { tk.busy = false; tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`; tk.g.style.transform = `translate(${tk.final[0]}px, ${tk.final[1]}px)`; return; }
+      if (k >= steps.length) {
+        tk.busy = false; tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`; tk.g.style.transform = `translate(${tk.final[0]}px, ${tk.final[1]}px)`;
+        // a little settle as the piece lands on its square
+        if (tk.lift.animate) tk.lift.animate([{ transform: 'none' }, { transform: 'translateY(1px) scale(1.1, .88)', offset: 0.4 }, { transform: 'none' }], { duration: 220 * speed(), delay: per * 0.6 });
+        setTimeout(() => tilt(view, -1), per + 140);
+        return;
+      }
       const sq = view.sqs[steps[k]];
       tk.g.style.transition = `transform ${per}ms cubic-bezier(.3,.7,.4,1)`;
       tk.g.style.transform = `translate(${sq.cx}px, ${sq.cy + (sq.isCorner ? (small ? 30 : 26) : 6)}px)`;
+      // an arc over each square: the piece rises and falls while its shadow shrinks under it
+      if (tk.lift.animate) {
+        tk.lift.animate([{ transform: 'none' }, { transform: 'translateY(-11px)', offset: 0.45 }, { transform: 'none' }], { duration: per, easing: 'ease-out' });
+        tk.shadow.animate([{ opacity: 1, transform: 'none' }, { opacity: 0.45, transform: 'scale(.75)', offset: 0.45 }, { opacity: 1, transform: 'none' }], { duration: per });
+      }
       k++;
       setTimeout(tick, per);
     };
     tick();
+  }
+
+  // laptop only (the phone board is zoomed in): the board leans back a little while a piece walks, then settles flat
+  function tilt(view, d) {
+    const wrap = view.svg.closest && view.svg.closest('.board-wrap');
+    if (!wrap) return;
+    view.moving = Math.max(0, (view.moving || 0) + d);
+    const on = view.moving > 0 && moving() && !!(root.matchMedia && root.matchMedia('(min-width: 900px) and (hover: hover)').matches);
+    wrap.classList.toggle('tilt', on);
   }
 
   root.BoardView = { create, update, heatColor, goodBad, geom };
