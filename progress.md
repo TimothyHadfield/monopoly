@@ -95,6 +95,7 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - "I've noticed the games often have good user interfaces but could be improved especially when a scenario happens that the game might've not really thought about or whatnot. Could you focus on making each game perfect especially in scenarios that the game doesn't expect or are a little weird." (2026-10-20)
 
 ## Traps
+- **online.js cache stamp (2026-10-27):** every import of `js/online.js` uses `?v=a3d0418b`, the `_online` content stamp. After a re-copy: put the new stamp from `node ../_online/tools/stamp.mjs` there, bump the importing file's `?v=` (and pwa.js `data-version`), then `node ../_online/tools/stamp.mjs --check .` must say OK.
 - Online test account: none needed (anonymous Firebase login). The two-browser script lives in the builder scratchpad, not the repo; rooms expire by TTL within 3 days (QA left room 8JKNT, a test left 3RLYE).
 - Never edit `js/online.js` here: re-copy it from `Board and Card Games/_online/` when that module changes.
 - Never edit `js/coach.js`, `js/profile.js`, `js/pwa.js`, `sw.js`, `css/coach.css`, `css/profile.css`: re-copy from `_coach/`, `_profile/`, `_pwa/`. Game parts live in `js/tutorial.js` and `js/profile-mono.js`. Check offline with `NODE_PATH=~/.claude/tools/node_modules node tools/pwa-check.mjs`.

@@ -525,7 +525,7 @@
   const NET_FLAG = 'monopoly:online';
   function netLoad() {
     if (netMod) return Promise.resolve(netMod);
-    return import(new URL('js/online.js', location.href).href).then(m => (netMod = m));
+    return import(new URL('js/online.js?v=a3d0418b', location.href).href).then(m => (netMod = m));
   }
   function netAttach(m) {
     if (NET) return NET;
