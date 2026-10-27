@@ -2,7 +2,7 @@
 
 ## START HERE
 Read order: this file → `CLAUDE.md` → `docs/rules-check.md` → `docs/ideas.md` → `chat.md`.
-Last updated: 2026-10-21 (v1.8 visibility pass: phone board camera + mini-map, upright phone names, laptop board full height; v1.7 edge pass: weird scenarios + table-look review fixes; v1.6 real-table look; v1.5 sounds, celebrations + animations; v1.4 visual pass; v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
+Last updated: 2026-10-27 (v1.9 improve pass: opens on Play; Hard beats Medium 68% one-on-one; guided first game + rules sheet; My stats, achievements, Daily game; Undo vs computer; end-of-game replay; Starting cash + No rent in jail options; home-screen install + offline; pieces hop, houses drop, laptop board tilts, paper grain. v1.8 visibility pass: phone board camera + mini-map, upright phone names, laptop board full height; v1.7 edge pass: weird scenarios + table-look review fixes; v1.6 real-table look; v1.5 sounds, celebrations + animations; v1.4 visual pass; v1.3: computers trade to finish sets; v1.2 online rooms, ideas 9-11, QA fixes).
 
 ## Goal right now
 A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap), a real-table money companion, a trade evaluator, and full rules-exact games against measured computers, with online seats once the shared module exists.
@@ -24,6 +24,8 @@ A finished Monopoly site in Tim's game-site style: exact landing odds (heatmap),
 | Real-table look (v1.6, 2026-10-20) | done: wood table, board printed like the real one (names, glyphs, diagonal corners, upside-down far rows), pewter tokens, real decks on the board, opponents' seats (deeds + bills), your deeds + bill stacks at the bottom, cards dealt from the deck and flipped, deeds fly to the buyer. Phone: seats strip on top, Log behind a tap; laptop: seats left, slim side panel right. Shared `css/table.css` + `js/table.js` = byte copies of `_table/`. Research: builder scratchpad `table/monopoly/real.md` |
 | Edge pass (v1.7, 2026-10-20) | done: 66 listed, 64 tested, 21 failed, 20 fixed, 1 accepted (tokens cover square text, as on a real board); live @ 74a9af3; see below |
 | Visibility pass (v1.8, 2026-10-21) | done: phone Play board zooms ~1.75-2.3x onto the side where the action is (camera follows the mover / lot being bought), mini-map button = whole board; phone names + prices printed upright on every side; laptop board full height (574→704 px at 1280×800), your area top of the right column, one-line player rows; landscape hides the title bar; pieces on one space spread in a grid. Harness: builder scratchpad `vis/monopoly/` (`shots.mjs`, `check.mjs`, `taps.mjs`, before/after shots) |
+
+| Improve pass (v1.9, 2026-10-27) | done, live: opens on Play; stronger Hard (`js/ai.js`: real-gain trades, mortgage loose lots to build); shared kits wired in: `_coach` (guided first game `js/tutorial.js`, rules sheet in Settings > Learn), `_profile` (`js/profile-mono.js`: My stats button in header, 11 achievements, Daily = short game vs two Hard on the day's seed, rated unless Hint/Undo used), `_pwa` (install + offline, `tools/pwa-check.mjs` 18/18); Undo (last 6 of your moves, local games, not in the Daily); Replay at game over (frames in `S.rec`, ≤1500); house rules Starting cash $1,000/$1,500/$2,000 + No rent in jail; board feel in `js/boardview.js` (hop arc, landing squash, house/hotel drop, laptop-only tilt, grain overlay on `.cam::after`), all off under Animations off / reduced motion. Tests 63 (`tests/options.test.js` new) |
 
 ## Edge pass (v1.7) scenario summary
 Scenarios list + results: builder scratchpad `edge/monopoly/scenarios.md`; WebKit harness `edge/monopoly/ui.mjs` (69 UI checks at 320/393/659-landscape/640/1280/1440/1920 widths), engine probes `probe.js`, node tests `tests/edge.test.js` (8).
@@ -61,14 +63,16 @@ Scenarios list + results: builder scratchpad `edge/monopoly/scenarios.md`; WebKi
 Computer / other players' sounds play at 0.8 volume. Reload or new game = no replayed sounds.
 
 ## Measured strength
-1,000 computer-only games per table, seats rotated, `tools/sim.js`, AI `reserve: 0.5` (raw JSON in `docs/sim-*.json`). Fair share: 25% at 4 seats, 50% at 2.
+1,000 computer-only games per table, seats rotated, `tools/sim.js` (raw JSON in `docs/sim-*-v2.json`). Fair share: 25% at 4 seats, 50% at 2. v1.9 (2026-10-27) before → after:
 | Table | Result |
 |---|---|
-| Hard vs 3 Medium | Hard 32.1% |
+| Hard vs Medium, 2 seats | Hard 53.6% → **68.4%** (test: ≥60% in 300 games) |
+| Hard vs 3 Medium | Hard 32.1% → 37.8% |
 | Medium vs 3 Easy | Medium 77.8% |
-| Hard, Medium, 2 Easy | 59.1% / 31.2% / 4.9% each |
-| Hard vs Easy, 2 seats | Hard 63.7% (1-v-1 is luck-heavy) |
-| 4 Medium | 0 of 1000 hit the safety stop, avg 184 turns |
+| Hard, Medium, 2 Easy | 59.1 / 31.2 / 4.9% → 63.2 / 29.3 / 3.75% |
+| Hard vs Easy, 2 seats | Hard 63.7% → 79.1% |
+| Medium vs Easy, 2 seats | Medium 44.2% (Medium loses to Easy one-on-one: open weakness) |
+| 4 Medium | 0 of 1000 hit the safety stop, avg 184 turns; with Hard's new trading, stalls stay 0 thanks to `stuckRound: 40` |
 v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60% of 4×Medium games hit the 4,000-turn safety stop; now 0/1000 (11 of 4000 across the other tables). Hard's lead over Medium shrank (was 59.6%) because Medium trades too; ~12 knob experiments (block premium, cash edge, reserve, house cap, extra offers) all landed at 30-32%.
 
 ## Authorized next steps
@@ -90,6 +94,7 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 ## Traps
 - Online test account: none needed (anonymous Firebase login). The two-browser script lives in the builder scratchpad, not the repo; rooms expire by TTL within 3 days (QA left room 8JKNT, a test left 3RLYE).
 - Never edit `js/online.js` here: re-copy it from `Board and Card Games/_online/` when that module changes.
+- Never edit `js/coach.js`, `js/profile.js`, `js/pwa.js`, `sw.js`, `css/coach.css`, `css/profile.css`: re-copy from `_coach/`, `_profile/`, `_pwa/`. Game parts live in `js/tutorial.js` and `js/profile-mono.js`. Check offline with `NODE_PATH=~/.claude/tools/node_modules node tools/pwa-check.mjs`.
 - Never edit `js/fx.js`: re-copy it from `Board and Card Games/_fx/`. Game sounds/effects live in `js/fx-game.js`; `BoardView.speed` (1 / 0.5 / 0) and the `fx-noanim` / `fx-fast` classes on `<html>` make the existing token glide and dice tumble obey Settings.
 - Never edit `js/table.js` / `css/table.css`: re-copy from `Board and Card Games/_table/`. `.gitattributes` marks the three shared copies `-text`, because with `autocrlf=true` a merge rewrote them as CRLF and the byte-copy test failed (2026-10-20).
 - Run tests as `npm test` (node --test with explicit files; a bare `node --test tests/` fails on Windows).
@@ -106,7 +111,8 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - Short game = 2008+ booklet (3 free deeds, hotel at 3 houses, one jail try, ends at the first bankruptcy). Time limit = 2 paid deeds + a round count.
 - House rules offered: Free Parking pot, $400 on Go. "No auctions" = Auctions switch off.
 - Max 3 trade offers per seat per turn (`Engine.offersLeft`; keeps computer games moving). Safety stop at 4000 turns → richest wins.
-- Default tab Odds; Play is the centre tab.
+- Default tab Play for a first visit (was Odds until v1.9); returning visitors keep their last tab.
+- v1.9 (not Tim's choices, flagged): Daily = official short game vs two Hard computers on the day's seed; achievement names (Landlord, Tycoon, Full table, Colour set, Hotelier, All aboard, Deep pockets, Fast money, Hat trick, Daily player); ratings Easy 1200 / Medium 1300 (judgement) / Hard 1435 (measured +134); My stats pill in the header; Undo keeps 6 moves and is off in the Daily; leaving an unfinished Daily = loss; online rooms now carry startCash/noJailRent too; tutorial wording.
 - Giving up is allowed only when cash + everything sellable/mortgageable can't cover the debt (or nothing can be sold right now). A debtor may offer trades.
 - Mortgage money uses integer math: interest = ceil(price/20), unmortgage = price/2 + ceil(price/20).
 - Computer trades (v1.3): Medium/Hard offer set-completing trades at end of turn (1 per turn), cash-balanced to the fair meter (never worse than -$50 for the other side); a declined offer isn't repeated for 6 rounds. Hard won't sell a lot that finishes someone else's set without a 25% premium. Easy never trades.
@@ -123,7 +129,8 @@ v1.3 (2026-10-20): Medium/Hard now trade to finish colour sets. Before that ~60%
 - The trade value formula is a reasoned model, not checked against expert trade data.
 - Online with 3+ people on real phones (tested: two headless browsers, WebKit 393 px + Chromium laptop, 70 moves, reload, leave).
 - Rule-impact table (idea 12) was dropped when computer games stalled; now they finish (v1.3), so it could be revisited.
-- Hard beats Medium only modestly (32% vs fair 25%) since v1.3.
+- ~~Hard beats Medium only modestly~~ fixed in v1.9 (68% one-on-one); Medium still loses to Easy one-on-one (44%).
+- v1.9: tutorial, replay, undo, My stats, Daily checked in headless WebKit (393/320/659-landscape/1280/1440) and node tests only; hop/drop/tilt measured via the Web Animations count, never watched on a real iPhone. The Buy/Auction buttons are clipped at 320px in the zoomed board on the old build too (pre-existing, not fixed). Online games with the new rule options not played.
 - v1.4 token glide and owner tint checked only in headless WebKit/Chromium screenshots, not on a real iPhone.
 - v1.5 sounds were never heard by a person: headless WebKit has no Web Audio; tests use a fake AudioContext. Online sounds from snapshots not tested with two browsers. Confetti seen in headless screenshots only.
 - v1.6 card deal/flip and deed flights were counted in a 60 s headless WebKit play run; not seen on a real iPhone.
