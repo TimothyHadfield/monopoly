@@ -579,7 +579,7 @@
     const o = ownStr(st), pl = st.players.map(q => [q.pos, q.cash, q.jail ? 1 : 0, q.out ? 1 : 0, q.cards.length]);
     const last = f[f.length - 1];
     const fr = { t: st.turns, r: st.round, k: st.turn, p: pl, o, l: lines.slice(-4), d: st.dice ? st.dice.join('') : '' };
-    if (!last || last.t !== st.turns || last.o !== o || pl.some((x, k) => x[0] !== last.p[k][0] || x[3] !== last.p[k][3])) { if (f.length < 3000) f.push(fr); }
+    if (!last || last.t !== st.turns || last.o !== o || pl.some((x, k) => x[0] !== last.p[k][0] || x[3] !== last.p[k][3])) { if (f.length < 1500) f.push(fr); }
     else { fr.l = last.l.concat(lines).slice(-4); f[f.length - 1] = fr; }
   }
   // the game as it stood at replay frame i (only what the board, seats and your area show)
@@ -595,6 +595,7 @@
     if (NETS || !window.MonoProfile) return;
     if (!S.gm || S.gm.id !== st.startId) S.gm = { id: st.startId, undo: [], helped: false, acc: null, recorded: false, daily: null, tutorial: false };
     S.gm.acc = MonoProfile.track(S.gm.acc, st, soloSeat(st), Money, GROUPS);
+    if (st.phase === 'over') S.gm.undo = []; // nothing to take back once it's over (and less to save)
     if (st.phase !== 'over' || S.gm.recorded || S.gm.tutorial || !window.Profile) return;
     S.gm.recorded = true;
     const me = soloSeat(st);
@@ -607,7 +608,7 @@
     const m = S.gm;
     if (!window.Profile || !m || !m.daily || m.recorded || !S.game || S.game.phase === 'over') return;
     m.recorded = true;
-    try { Profile.recordResult({ mode: 'computer', level: 'hard', won: false, daily: true, date: m.daily }); } catch (e) { /* ignore */ }
+    try { Profile.recordResult({ mode: m.helped ? 'help' : 'computer', level: m.helped ? null : 'hard', won: false, daily: true, date: m.daily }); } catch (e) { /* ignore */ }
     toast('Daily game left: counted as a loss');
   }
   const rulesFrom = r => ({ auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100, startCash: r.startCash || 1500, noJailRent: !!r.noJailRent });
@@ -626,12 +627,21 @@
     setGame(ng);
     render(); pump();
   }
+  // starting the Daily or the guided game over an unfinished game: the first tap only warns
+  let leaveAsk = 0;
+  function leaveOk() {
+    if (!S.game || S.game.phase === 'over' || Date.now() - leaveAsk < 4000) { leaveAsk = 0; return true; }
+    leaveAsk = Date.now();
+    toast('Tap again to leave your game in progress', 3500);
+    return false;
+  }
   function startDaily() {
     if (!window.Profile || !window.MonoProfile) return;
     const day = Profile.daily.date();
     if (S.gm && S.gm.daily === day && S.game && S.game.phase !== 'over') { Profile.closePanel(); if (S.tab !== 'play') goTab('play'); return toast('Your Daily game is on the table'); }
     if (Profile.daily.played(day)) return Profile.openPanel({ tab: 'daily' });
     if (NET || NETS) { Profile.closePanel(); return toast('Leave the online room first'); }
+    if (!leaveOk()) return;
     Profile.closePanel();
     const d = MonoProfile.dailyGame(Profile.daily.seed(day));
     startGame(d.seats, Object.assign(rulesFrom(defaults().setup.rules), d.rules), { seed: d.seed, daily: day });
@@ -642,6 +652,7 @@
   function startTutorial() {
     if (!window.COACH || !Play.tour || !window.MonoTutorial) return;
     if (NET || NETS) return toast('Leave the online room first');
+    if (!leaveOk()) return;
     const t = MonoTutorial.setup();
     Play.tour.reset();
     startGame(t.seats, rulesFrom(defaults().setup.rules), { seed: t.seed, tutorial: true });
@@ -655,7 +666,7 @@
   function openRules(open) { if (window.COACH && window.MonoTutorial) { closeSheet(); COACH.rules(Object.assign(MonoTutorial.rules(), { open })); } }
   function undo() {
     const u = S.gm && S.gm.undo;
-    if (!u || !u.length || NETS || !G || G.phase === 'over' || Play.rp) return;
+    if (!u || !u.length || NETS || !G || G.phase === 'over' || Play.rp || S.gm.daily) return;
     const x = u.pop();
     gen++; clearTimeout(timer);
     S.gm.helped = true;
@@ -713,7 +724,7 @@
     if (!G || Play.rp) return;
     let before = null;
     // Undo (local games): the game as it was before each of your own moves
-    if (fromHuman && !NETS && S.gm) { S.gm.undo.push({ st: G, nf: S.rec ? S.rec.f.length : 0, nh: S.hist ? S.hist.rows.length : 0 }); if (S.gm.undo.length > 12) S.gm.undo.shift(); }
+    if (fromHuman && !NETS && S.gm && !S.gm.daily) { S.gm.undo.push({ st: G, nf: S.rec ? S.rec.f.length : 0, nh: S.hist ? S.hist.rows.length : 0 }); if (S.gm.undo.length > 6) S.gm.undo.shift(); }
     if (fromHuman && S.settings.coach && ['buy', 'decline', 'bid', 'pass', 'payJail', 'useCard', 'accept', 'reject'].includes(action.type)) {
       try { before = AI.hint(G, action.seat); } catch (e) { before = null; }
     }
@@ -912,7 +923,7 @@
     mine() {
       const st = G, me = Play.me(), act = !Play.rp && humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt');
       const wide = innerWidth >= 900, land = document.body.classList.contains('land');
-      const canUndo = !NETS && !!(S.gm && S.gm.undo && S.gm.undo.length) && st.phase !== 'over';
+      const canUndo = !NETS && !!(S.gm && S.gm.undo && S.gm.undo.length && !S.gm.daily) && st.phase !== 'over';
       const btns = Play.rp ? `<span class="csub">Replay</span>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`
         : `${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}${NETS ? '' : `<button class="btn small" data-act="undo" ${canUndo ? '' : 'disabled'}>Undo</button>`}<button class="btn small" data-act="manage" ${act ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${act ? '' : 'disabled'}>Trade</button>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`;
       if (me < 0) return `<div class="mbar"><span class="csub">Computers only</span><span class="grow"></span>${btns}</div>`;
@@ -1499,7 +1510,8 @@
     const newer = g ? (!mine || g.startId !== mine.startId || (g.seq || 0) > (mine.seq || 0)) : !!mine;
     if (!newer) return;
     gen++; clearTimeout(timer);
-    S.game = g || null; S.hist = d.hist || null; G = S.game;
+    S.game = g || null; S.hist = d.hist || null; S.gm = d.gm || null; S.rec = d.rec || null; G = S.game;
+    Play.rp = null; clearTimeout(Play.rpT);
     if (!g) closeSheet();
     render(); pump();
   });
