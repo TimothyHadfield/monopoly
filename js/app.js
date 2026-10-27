@@ -23,7 +23,7 @@
       trade: { a: 0, b: 1, aGives: [], bGives: [], aCash: 0, bCash: 0 },
       setup: {
         seats: [{ name: 'You', kind: 'human' }, { name: 'Ada', kind: 'cpu', level: 'hard' }, { name: 'Bo', kind: 'cpu', level: 'medium' }, { name: 'Cy', kind: 'cpu', level: 'easy' }],
-        rules: { auction: true, freeParking: false, doubleGo: false, shortGame: false, roundLimit: 0, oldTaxes: false },
+        rules: { auction: true, freeParking: false, doubleGo: false, shortGame: false, roundLimit: 0, oldTaxes: false, startCash: 1500, noJailRent: false },
       },
       game: null,
     };
@@ -93,6 +93,7 @@
     if (!fromPop) history.back();
   }
   window.addEventListener('popstate', e => {
+    if (window.COACH && COACH.rulesOpen()) { COACH.closeRules(); history.pushState({ tab: S.tab }, '', '#' + S.tab); return; }
     if (sheetOpen) { closeSheet(true); return; }
     const t = (location.hash || '').slice(1);
     if (TABS.some(x => x.id === t) && t !== S.tab) { S.tab = t; save(); render(); }
@@ -122,7 +123,9 @@
     S.tab = id; save();
     history.pushState({ tab: id }, '', '#' + id);
     $('panel').scrollTop = 0;
+    if (window.COACH && id !== 'play') COACH.closeOffer();
     render();
+    offerTutorial();
   }
 
   // ---------------------------------------------------------------- layout
@@ -561,8 +564,109 @@
   function setGame(st) {
     if (st) st.seq = ((G && G.startId === st.startId && G.seq) || 0) + 1; // move counter: lets a second tab tell newer from older
     G = st; S.game = st;
-    if (!st) S.hist = null; else track(st, st.startId);
+    if (!st) { S.hist = null; S.rec = null; Play.rp = null; } else { track(st, st.startId); recFrame(st); gameStats(st); }
     save();
+  }
+  // ---------------------------------------------------------------- replay frames (one per move, buy or turn)
+  // compact: every piece's square, cash, jail, out, jail cards; the owner/houses string; the new log lines
+  const ownStr = st => st.own.map(x => (x.owner < 0 ? '.' : String.fromCharCode(97 + x.owner) + x.houses + (x.mort ? 'm' : ''))).join(',');
+  function recFrame(st) {
+    if (!st.startId) return;
+    if (!S.rec || S.rec.id !== st.startId) S.rec = { id: st.startId, f: [], n: 0 };
+    const R = S.rec, f = R.f, n = st.logN || 0;
+    const lines = n > R.n ? st.log.slice(-Math.min(n - R.n, st.log.length)) : [];
+    R.n = n;
+    const o = ownStr(st), pl = st.players.map(q => [q.pos, q.cash, q.jail ? 1 : 0, q.out ? 1 : 0, q.cards.length]);
+    const last = f[f.length - 1];
+    const fr = { t: st.turns, r: st.round, k: st.turn, p: pl, o, l: lines.slice(-4), d: st.dice ? st.dice.join('') : '' };
+    if (!last || last.t !== st.turns || last.o !== o || pl.some((x, k) => x[0] !== last.p[k][0] || x[3] !== last.p[k][3])) { if (f.length < 3000) f.push(fr); }
+    else { fr.l = last.l.concat(lines).slice(-4); f[f.length - 1] = fr; }
+  }
+  // the game as it stood at replay frame i (only what the board, seats and your area show)
+  function frameState(i) {
+    const fr = S.rec.f[i], base = S.game;
+    const own = fr.o.split(',').map(x => (x === '.' ? { owner: -1, houses: 0, mort: false } : { owner: x.charCodeAt(0) - 97, houses: +x[1], mort: x.length > 2 }));
+    const players = base.players.map((p, k) => Object.assign({}, p, { pos: fr.p[k][0], cash: fr.p[k][1], jail: fr.p[k][2], out: !!fr.p[k][3], cards: Array(fr.p[k][4]).fill('chance') }));
+    return Object.assign({}, base, { own, players, turn: fr.k, round: fr.r, phase: 'replay', dice: fr.d ? [+fr.d[0], +fr.d[1]] : null, lastCard: null, tie: null });
+  }
+  // ---------------------------------------------------------------- my stats (js/profile.js + js/profile-mono.js)
+  const soloSeat = st => { const h = st.players.map((p, k) => (p.kind === 'human' ? k : -1)).filter(k => k >= 0); return h.length ? h[0] : -1; };
+  function gameStats(st) {
+    if (NETS || !window.MonoProfile) return;
+    if (!S.gm || S.gm.id !== st.startId) S.gm = { id: st.startId, undo: [], helped: false, acc: null, recorded: false, daily: null, tutorial: false };
+    S.gm.acc = MonoProfile.track(S.gm.acc, st, soloSeat(st), Money, GROUPS);
+    if (st.phase !== 'over' || S.gm.recorded || S.gm.tutorial || !window.Profile) return;
+    S.gm.recorded = true;
+    const me = soloSeat(st);
+    if (me < 0) return; // computers only
+    const r = MonoProfile.result(st, me, { helped: S.gm.helped, daily: !!S.gm.daily, acc: S.gm.acc });
+    try { Profile.recordResult(S.gm.daily ? Object.assign(r, { date: S.gm.daily }) : r); } catch (e) { /* stats never break the game */ }
+  }
+  // leaving an unfinished Daily game (new game, another Daily) counts it as lost, so it can't be retried
+  function abandonDaily() {
+    const m = S.gm;
+    if (!window.Profile || !m || !m.daily || m.recorded || !S.game || S.game.phase === 'over') return;
+    m.recorded = true;
+    try { Profile.recordResult({ mode: 'computer', level: 'hard', won: false, daily: true, date: m.daily }); } catch (e) { /* ignore */ }
+    toast('Daily game left: counted as a loss');
+  }
+  const rulesFrom = r => ({ auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100, startCash: r.startCash || 1500, noJailRent: !!r.noJailRent });
+  // a new local game; opts: { seed, tutorial, daily: 'YYYY-MM-DD' }
+  function startGame(seats, rules, opts) {
+    opts = opts || {};
+    abandonDaily();
+    closeSheet(); if (window.COACH) COACH.closeOffer();
+    gen++; clearTimeout(timer); lastDiceKey = ''; Play.rp = null; clearTimeout(Play.rpT);
+    const nm = uniqueNames(seats.map(s => s.name));
+    const ng = Engine.newGame(seats.map((s, k) => ({ name: nm[k], kind: s.kind, level: s.level || 'medium' })), rules, opts.seed);
+    ng.startId = Date.now();
+    S.gm = { id: ng.startId, undo: [], helped: !!opts.tutorial, acc: null, recorded: false, daily: opts.daily || null, tutorial: !!opts.tutorial };
+    S.rec = null;
+    if (S.tab !== 'play') { S.tab = 'play'; history.pushState({ tab: 'play' }, '', '#play'); }
+    setGame(ng);
+    render(); pump();
+  }
+  function startDaily() {
+    if (!window.Profile || !window.MonoProfile) return;
+    const day = Profile.daily.date();
+    if (S.gm && S.gm.daily === day && S.game && S.game.phase !== 'over') { Profile.closePanel(); if (S.tab !== 'play') goTab('play'); return toast('Your Daily game is on the table'); }
+    if (Profile.daily.played(day)) return Profile.openPanel({ tab: 'daily' });
+    if (NET || NETS) { Profile.closePanel(); return toast('Leave the online room first'); }
+    Profile.closePanel();
+    const d = MonoProfile.dailyGame(Profile.daily.seed(day));
+    startGame(d.seats, Object.assign(rulesFrom(defaults().setup.rules), d.rules), { seed: d.seed, daily: day });
+    if (window.FX) FX.play('shuffle');
+    toast('Daily game: short game against two Hard computers', 3200);
+  }
+  // the guided first game (js/tutorial.js + shared js/coach.js): a fixed first throw, you against one Easy computer
+  function startTutorial() {
+    if (!window.COACH || !Play.tour || !window.MonoTutorial) return;
+    if (NET || NETS) return toast('Leave the online room first');
+    const t = MonoTutorial.setup();
+    Play.tour.reset();
+    startGame(t.seats, rulesFrom(defaults().setup.rules), { seed: t.seed, tutorial: true });
+    Play.tour.start();
+  }
+  function offerTutorial() {
+    if (!window.COACH || !Play.tour || S.tab !== 'play' || S.game || NET || NETS || netResuming || sheetOpen) return;
+    if (Play.tour.seen() || COACH.offered('mono-first')) return;
+    COACH.offer({ id: 'mono-first', title: 'New to Monopoly?', text: 'Play a guided first game against one easy computer.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial() });
+  }
+  function openRules(open) { if (window.COACH && window.MonoTutorial) { closeSheet(); COACH.rules(Object.assign(MonoTutorial.rules(), { open })); } }
+  function undo() {
+    const u = S.gm && S.gm.undo;
+    if (!u || !u.length || NETS || !G || G.phase === 'over' || Play.rp) return;
+    const x = u.pop();
+    gen++; clearTimeout(timer);
+    S.gm.helped = true;
+    if (S.rec && S.rec.id === x.st.startId) { S.rec.f.length = Math.min(S.rec.f.length, x.nf); S.rec.n = x.st.logN || 0; }
+    if (S.hist) S.hist.rows.length = Math.min(S.hist.rows.length, Math.max(1, x.nh));
+    closeSheet();
+    fxPrev = null; lastDiceKey = null; // going back makes no sounds and throws no dice
+    setGame(x.st);
+    render(); pump();
+    toast('Took back your last move');
+    if (window.COACH) COACH.emit('undo');
   }
   // net worth once per round, for the after-game chart
   function track(st, id) {
@@ -606,8 +710,10 @@
   const IRREG = { is: 'are', has: 'have', goes: 'go', does: 'do' };
   const say = l => String(l).replace(/(^|[.;] |, )You (\w+)/g, (m, pre, v) => pre + 'You ' + (IRREG[v] || (/(ss|sh|ch|x)es$/.test(v) ? v.slice(0, -2) : /[^s]s$/.test(v) ? v.slice(0, -1) : v)));
   function doAction(action, fromHuman) {
-    if (!G) return;
+    if (!G || Play.rp) return;
     let before = null;
+    // Undo (local games): the game as it was before each of your own moves
+    if (fromHuman && !NETS && S.gm) { S.gm.undo.push({ st: G, nf: S.rec ? S.rec.f.length : 0, nh: S.hist ? S.hist.rows.length : 0 }); if (S.gm.undo.length > 12) S.gm.undo.shift(); }
     if (fromHuman && S.settings.coach && ['buy', 'decline', 'bid', 'pass', 'payJail', 'useCard', 'accept', 'reject'].includes(action.type)) {
       try { before = AI.hint(G, action.seat); } catch (e) { before = null; }
     }
@@ -618,7 +724,7 @@
       NET.act(a).then(r => { if (r && r.ok === false) toast(esc(r.message)); });
     } else {
       try { setGame(Engine.apply(G, action)); }
-      catch (e) { fxError(); toast(esc(e.message)); return; }
+      catch (e) { if (fromHuman && S.gm && S.gm.undo.length) S.gm.undo.pop(); fxError(); toast(esc(e.message)); return; }
     }
     if (before && before.action && before.action.type !== action.type) {
       const what = { buy: 'buy it', decline: 'not buy it', bid: 'keep bidding', pass: 'pass', payJail: 'pay to leave jail', useCard: 'use the jail card', roll: 'roll for doubles', accept: 'accept', reject: 'turn it down' }[before.action.type] || before.action.type;
@@ -630,12 +736,12 @@
   function pump() {
     clearTimeout(timer);
     // only the tab you are looking at plays the computers (a hidden or second tab just follows)
-    if (NETS || !G || G.phase === 'over' || S.tab !== 'play' || document.hidden) return;
+    if (NETS || !G || G.phase === 'over' || Play.rp || S.tab !== 'play' || document.hidden) return;
     const a = Engine.actor(G);
     if (a < 0 || G.players[a].kind !== 'cpu') return;
     const my = ++gen;
     timer = setTimeout(() => {
-      if (my !== gen || !G) return;
+      if (my !== gen || !G || Play.rp) return;
       const me = Engine.actor(G);
       if (me < 0 || G.players[me].kind !== 'cpu') return;
       let ch;
@@ -703,6 +809,7 @@
       if (netResuming && !NETS) return `<div class="ctitle">Reconnecting…</div><div class="csub">Getting your online room back.</div>`;
       if (NETS && !G) return `<div class="cap">Online room</div><div class="big" style="letter-spacing:.12em">${esc(NETS.code || '')}</div><div class="csub">${NETS.isHost ? 'Friends open this site, tap Play, and join with this code.' : 'Waiting for the host to start.'}</div>`;
       if (!G) return `<div class="ctitle">New game</div><div class="csub" style="margin-bottom:8px">Set the seats and rules below.</div><div class="row"><button class="btn warm" data-act="start">Start game</button></div>`;
+      if (Play.rp) return Play.replayCenter();
       const st = G, me = humanSeat(st), a = Engine.actor(st);
       const who = a >= 0 ? st.players[a] : null;
       const dk = st.dice ? st.dice.join('') + ':' + st.turns + ':' + st.log.length : '';
@@ -711,8 +818,10 @@
       lastDiceKey = dk;
       let h = '';
       if (st.phase === 'over') {
-        if (st.tie && st.tie.length > 1) return `<div class="cap">Game over · tie</div><div class="ctitle">${st.tie.map(k => `<span style="color:${COLORS[k]}">${esc(st.players[k].name)}</span>`).join(' &amp; ')}</div><div class="csub">level on worth after ${st.round} round${st.round === 1 ? "" : "s"}</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
-        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} round${st.round === 1 ? "" : "s"}</div><div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button></div>`;
+        const rpb = !NETS && S.rec && S.rec.id === st.startId && S.rec.f.length > 1 ? '<button class="btn" data-act="rpopen">Replay</button>' : '';
+        const btns = `<div class="row" style="margin-top:8px"><button class="btn warm" data-act="${NETS ? 'netleave' : 'newgame'}">${NETS ? 'Leave room' : 'New game'}</button>${rpb}</div>`;
+        if (st.tie && st.tie.length > 1) return `<div class="cap">Game over · tie</div><div class="ctitle">${st.tie.map(k => `<span style="color:${COLORS[k]}">${esc(st.players[k].name)}</span>`).join(' &amp; ')}</div><div class="csub">level on worth after ${st.round} round${st.round === 1 ? "" : "s"}</div>${btns}`;
+        return `<div class="cap">Game over</div><div class="big" style="color:${COLORS[st.winner]}">${esc(st.players[st.winner].name)}</div><div class="csub">${st.players[st.winner].name === 'You' ? 'win' : 'wins'} after ${st.round} round${st.round === 1 ? "" : "s"}</div>${btns}`;
       }
       h += `<div class="cap turn"><span style="color:${COLORS[a]}">●</span> ${esc(who.name)}${who.kind === 'cpu' ? ' (computer)' : ''}</div>`;
       if (st.dice) h += `<div class="dice">${dieHTML(st.dice[0], anim, dk, 0)}${dieHTML(st.dice[1], anim, dk, 1)}</div>`;
@@ -801,9 +910,11 @@
     },
     // your own money and deeds, laid out in front of you, with your buttons
     mine() {
-      const st = G, me = Play.me(), act = humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt');
+      const st = G, me = Play.me(), act = !Play.rp && humanSeat(st) >= 0 && (st.phase === 'roll' || st.phase === 'end' || st.phase === 'debt');
       const wide = innerWidth >= 900, land = document.body.classList.contains('land');
-      const btns = `${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}<button class="btn small" data-act="manage" ${act ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${act ? '' : 'disabled'}>Trade</button>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`;
+      const canUndo = !NETS && !!(S.gm && S.gm.undo && S.gm.undo.length) && st.phase !== 'over';
+      const btns = Play.rp ? `<span class="csub">Replay</span>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`
+        : `${humanSeat(st) >= 0 && st.phase !== 'over' ? '<button class="btn small" data-act="hint">Hint</button>' : ''}${NETS ? '' : `<button class="btn small" data-act="undo" ${canUndo ? '' : 'disabled'}>Undo</button>`}<button class="btn small" data-act="manage" ${act ? '' : 'disabled'}>Manage</button><button class="btn small" data-act="gtrade" ${act ? '' : 'disabled'}>Trade</button>${wide ? '' : '<button class="btn small" data-act="logsheet">Log</button>'}`;
       if (me < 0) return `<div class="mbar"><span class="csub">Computers only</span><span class="grow"></span>${btns}</div>`;
       const p = st.players[me];
       const avail = wide ? SIDE_W - 24 : land ? innerWidth * 0.3 - 20 : innerWidth - 16 - 150;
@@ -813,6 +924,32 @@
           <div class="mcash">${billsHTML(p.cash, 4)}<b data-cash="${me}">${money(p.cash)}</b></div>
         </div>
         <div class="mbar"><span class="plate${me === st.turn && st.phase !== 'over' ? ' turn' : ''}" style="--pc:${COLORS[me]}"><span class="pdot"></span>${esc(p.name)}${p.jail ? ' · jail' : ''}</span><span class="grow"></span>${btns}</div>`;
+    },
+    // ---- end-of-game replay: step through the game move by move (board, seats and money as they were)
+    rp: null, rpT: null,
+    replayCenter() {
+      const R = S.rec, i = Play.rp.i, fr = R.f[i], n = R.f.length;
+      const who = G.players[fr.k];
+      const lines = fr.l.filter(l => !/ to roll\.$/.test(l)).slice(-2);
+      const ic = { first: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5l-9 7 9 7z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>', back: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 5l-10 7 10 7z" fill="currentColor"/></svg>', fwd: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l10 7-10 7z" fill="currentColor"/></svg>', play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg>', pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="currentColor"/></svg>' };
+      return `<div class="cap">Replay · round ${fr.r}</div>
+        <div class="cap turn"><span style="color:${COLORS[fr.k]}">●</span> ${esc(who ? who.name : '')}</div>
+        ${fr.d ? `<div class="dice">${dieHTML(+fr.d[0], false, 'rp' + i, 0)}${dieHTML(+fr.d[1], false, 'rp' + i, 1)}</div>` : ''}
+        ${lines.map(l => `<div class="csub">${esc(say(l))}</div>`).join('')}
+        <input class="rpbar" type="range" min="0" max="${n - 1}" value="${i}" data-act="rpseek" aria-label="Move ${i + 1} of ${n}">
+        <div class="row rpctl"><button class="btn small" data-act="rpstep" data-v="-1000" aria-label="Start">${ic.first}</button><button class="btn small" data-act="rpstep" data-v="-1" aria-label="Back">${ic.back}</button><button class="btn small warm" data-act="rpplay" aria-label="${Play.rp.on ? 'Pause' : 'Play'}">${Play.rp.on ? ic.pause : ic.play}</button><button class="btn small" data-act="rpstep" data-v="1" aria-label="Forward">${ic.fwd}</button><button class="btn small" data-act="rpclose">Done</button></div>`;
+    },
+    rpGo(i) {
+      if (!Play.rp || !S.rec) return;
+      Play.rp.i = clamp(i, 0, S.rec.f.length - 1);
+      if (Play.rp.i >= S.rec.f.length - 1) Play.rp.on = false;
+      render();
+      Play.rpTick();
+    },
+    rpTick() {
+      clearTimeout(Play.rpT);
+      if (!Play.rp || !Play.rp.on) return;
+      Play.rpT = setTimeout(() => Play.rpGo(Play.rp.i + 1), { fast: 260, normal: 600, slow: 1000 }[S.settings.speed] || 600);
     },
     lobbyPanel() {
       const n = NETS;
@@ -847,6 +984,8 @@
         <div class="sec">House rules</div>
         ${sw('freeParking', 'Free Parking pot')}
         ${sw('doubleGo', '$400 on Go')}
+        ${sw('noJailRent', 'No rent in jail')}
+        <div class="line"><span class="lbl">Starting cash</span><div class="seg">${[1000, 1500, 2000].map(n => `<button data-act="rcash" data-v="${n}" aria-pressed="${(r.startCash || 1500) === n}">$${n.toLocaleString('en-US')}</button>`).join('')}</div></div>
         ${sw('oldTaxes', 'Pre-2008 taxes')}
         <div class="row" style="display:flex;margin-top:14px"><button class="btn warm" style="flex:1" data-act="start">Start game</button></div>`;
       return h;
@@ -919,16 +1058,13 @@
         return;
       }
       switch (a) {
-        case 'start': {
-          const r = su.rules;
-          const rules = { auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100 };
-          gen++; clearTimeout(timer); lastDiceKey = '';
-          const nm = uniqueNames(su.seats.map(s => s.name));
-          const ng = Engine.newGame(su.seats.map((s, k) => ({ name: nm[k], kind: s.kind, level: s.level || 'medium' })), rules);
-          ng.startId = Date.now();
-          setGame(ng);
-          render(); pump(); return;
-        }
+        case 'start': startGame(su.seats, rulesFrom(su.rules)); return;
+        case 'undo': undo(); return;
+        case 'rpopen': if (S.rec && S.rec.f.length > 1) { closeSheet(); Play.rp = { i: 0, on: true }; render(); Play.rpTick(); } return;
+        case 'rpstep': if (Play.rp) { Play.rp.on = false; Play.rpGo(Play.rp.i + +d.v); } return;
+        case 'rpplay': if (Play.rp) { Play.rp.on = !Play.rp.on; if (Play.rp.on && Play.rp.i >= S.rec.f.length - 1) Play.rp.i = 0; render(); Play.rpTick(); } return;
+        case 'rpclose': clearTimeout(Play.rpT); Play.rp = null; render(); return;
+        case 'rcash': su.rules.startCash = +d.v; break;
         case 'newgame': {
           // a game in progress needs a second tap (0.4 to 3 s later), so a stray tap can't throw it away
           if (G && G.phase !== 'over') {
@@ -938,12 +1074,11 @@
           Play.armed = 0;
         }
         // falls through
-        case 'newgameNow': closeSheet(); gen++; clearTimeout(timer); setGame(null); render(); return;
+        case 'newgameNow': abandonDaily(); closeSheet(); gen++; clearTimeout(timer); clearTimeout(Play.rpT); setGame(null); render(); offerTutorial(); return;
         case 'netcreate': {
           const mine = su.seats.findIndex(x => x.kind === 'human');
           const name = (su.seats[mine >= 0 ? mine : 0].name || 'Player').slice(0, 12);
-          const r = su.rules;
-          const rules = { auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100 };
+          const rules = rulesFrom(su.rules);
           const seats = su.seats.map(x => (x.kind === 'human' ? 'human' : { kind: 'computer', name: x.name || 'Computer' }));
           if (mine < 0) seats[0] = 'human';
           netRun(N => N.createRoom({ name, seats, options: { rules, levels: su.seats.map(x => x.level || 'medium') } }));
@@ -978,6 +1113,7 @@
         case 'seeoffer': Play.offerSheet(); return;
         case 'hint': {
           const me = humanSeat(G); if (me < 0) return;
+          if (!NETS && S.gm) { S.gm.helped = true; save(); }
           const h = AI.hint(G, me);
           const act = h.action;
           const name = { roll: 'Roll', end: 'End the turn', buy: 'Buy', decline: 'Let it go to auction', bid: `Bid ${money(act.amount || 0)}`, pass: 'Pass', payJail: 'Pay $50', useCard: 'Use your jail card', build: 'Build', propose: 'Offer a trade', payDebt: 'Pay', bankrupt: 'Give up', mortgage: 'Mortgage', sell: 'Sell a building', accept: 'Accept', reject: 'Turn it down', unmortgage: 'Unmortgage' }[act.type] || act.type;
@@ -1006,6 +1142,7 @@
       save(); render();
     },
     input(a, d, e) {
+      if (a === 'rpseek' && Play.rp) { Play.rp.on = false; Play.rpGo(+e.target.value); return; }
       if (a === 'sname') { S.setup.seats[+d.k].name = e.target.value.slice(0, 12); save(); return; }
       if (a === 'netcode') { S.netCode = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5); save(); return; }
       if (a === 'gcash' && Play.gt) { tradeEdit(G, Play.gt, a, d, e); const s = $('sheet'); const keep = s.scrollTop; const tv = s.querySelector('.sec:last-of-type'); void tv; Play.refreshTradeResult(); s.scrollTop = keep; }
@@ -1045,6 +1182,9 @@
         <div class="sec">Play</div>
         <div class="line"><span class="lbl">Computer speed</span>${seg('speed', [['fast', 'Fast'], ['normal', 'Normal'], ['slow', 'Slow']])}</div>
         <div class="line"><span class="lbl">Coach${help('coach')}</span><label class="switch"><input type="checkbox" data-act="coach" ${s.coach ? 'checked' : ''}><span></span></label></div>
+        <div class="sec">Learn</div>
+        <div class="line"><span class="lbl">Rules</span><button class="btn small" data-act="rules">Open</button></div>
+        <div class="line"><span class="lbl">Guided first game</span><button class="btn small" data-act="tutorial">Start</button></div>
         <div class="sec">Sound &amp; effects</div>
         <div id="fxSet"></div>
         <div class="sec">How strong are the computers?</div>
@@ -1056,6 +1196,8 @@
     act(a, d, e) {
       if (a === 'set') { S.settings[d.k] = d.k === 'rounds' ? +d.v : d.v; }
       if (a === 'coach') S.settings.coach = e.target.checked;
+      if (a === 'rules') { openRules(); return; }
+      if (a === 'tutorial') { startTutorial(); return; }
       if (a === 'resettable') {
         // a second tap between 0.4 s and 3 s confirms (a fast double-tap does not)
         const dt = Date.now() - (Settings.armed || 0);
@@ -1080,6 +1222,8 @@
   function render() {
     renderTabs();
     G = NETS ? NETS.pub : S.game;
+    if (Play.rp && (NETS || !G || G.phase !== 'over' || !S.rec || S.rec.id !== G.startId)) Play.rp = null;
+    if (Play.rp) G = frameState(Play.rp.i);
     const sc = SCREENS[S.tab];
     const playing = S.tab === 'play' && !!G && !(netResuming && !NETS);
     if (playing !== document.body.classList.contains('playing') || !render.laid) { document.body.classList.toggle('playing', playing); layout(playing); render.laid = true; }
@@ -1099,8 +1243,9 @@
     if (S.tab === 'settings' && window.FX && $('fxSet')) FX.renderSettings($('fxSet'));
     fxStep();
     // the phone's Log sheet keeps up while computers play
-    if (sheetOpen && sheetKind === 'log') { if (S.tab === 'play' && G) { const sh = $('sheet'), k = sh.scrollTop; sh.innerHTML = Play.logSheet(); sh.scrollTop = k; } else closeSheet(); }
+    if (sheetOpen && sheetKind === 'log' && !Play.rp) { if (S.tab === 'play' && G) { const sh = $('sheet'), k = sh.scrollTop; sh.innerHTML = Play.logSheet(); sh.scrollTop = k; } else closeSheet(); }
     if (S.tab === 'play' && G && G.phase === 'trade' && humanSeat(G) >= 0 && (!sheetOpen || sheetKind === 'log')) Play.offerSheet();
+    if (window.COACH) setTimeout(() => COACH.update(), 0); // the guided game follows the game and steps aside under a sheet
   }
   // ---------------------------------------------------------------- sounds + animations (js/fx-game.js)
   // every effect comes from comparing the game before and after, so your moves, computer
@@ -1127,7 +1272,7 @@
     const id = NETS ? 'net:' + NETS.code : (G ? G.startId || 'local' : null);
     const prev = fxPrev, same = fxId === id;
     fxPrev = G; fxId = id;
-    if (!G || !prev || !same || prev === G || S.tab !== 'play' || document.hidden || !window.FX || !window.MonoFX) return;
+    if (!G || !prev || !same || prev === G || Play.rp || prev.phase === 'replay' || S.tab !== 'play' || document.hidden || !window.FX || !window.MonoFX) return;
     const mine = k => (NETS ? k === NETS.mySeat : !!(G.players[k] && G.players[k].kind === 'human'));
     try { MonoFX.run(MonoFX.events(prev, G, { mine, f: fxSpeed(), colors: COLORS }), fxDom); } catch (e) { /* effects never break the game */ }
     try { flyDeeds(prev, G); } catch (e) { /* effects never break the game */ }
@@ -1300,7 +1445,7 @@
     if (a === 'zoom') { S.settings.zoom = S.settings.zoom === false; save(); render(); return; }
     // a fast double tap must not land on the button that just replaced the one tapped
     // (Roll -> End turn, Buy -> End turn, Start -> Roll)
-    if (el.closest('#center') && Date.now() - (render.centerAt || 0) < 350) return;
+    if (el.closest('#center') && !/^rp/.test(a) && Date.now() - (render.centerAt || 0) < 350) return;
     const sc = SCREENS[S.tab];
     if (sc.act) sc.act(a, el.dataset, e);
   }
@@ -1366,7 +1511,32 @@
     if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return false;
     return S.tab === 'settings' || S.tab === 'odds' || !S.game || S.game.phase === 'over';
   };
-  window.MonoApp = { get S() { return S; }, get G() { return G; }, Play, doAction, render, save }; // for tests / debugging
+  // My stats (shared _profile kit, everything stays on this device)
+  if (window.Profile && window.MonoProfile && $('meBtn')) {
+    const paintMe = () => { $('meBtn').innerHTML = Profile.avatarSVG(Profile.avatar, 26) + '<span>My stats</span>'; };
+    try {
+      Profile.init({
+        game: 'monopoly', levels: MonoProfile.LEVELS, achievements: MonoProfile.achievements(),
+        modes: { help: { name: 'Computers, with help' }, friends: { name: 'Pass and play' }, online: { hide: true } },
+        daily: { title: 'Daily game', onPlay: () => startDaily() },
+        onChange: what => { if (what === 'me' || what === 'import') paintMe(); },
+      });
+      paintMe(); $('meBtn').hidden = false;
+      $('meBtn').onclick = () => Profile.openPanel();
+    } catch (e) { $('meBtn').remove(); }
+  } else if ($('meBtn')) $('meBtn').remove();
+  // the guided first game: steps follow the game's own state; it steps aside on other tabs and under sheets
+  if (window.COACH && window.MonoTutorial) {
+    const tut = () => !!(S.gm && S.gm.tutorial && S.game && !NETS);
+    Play.tour = COACH.tour({
+      id: 'mono-first',
+      steps: MonoTutorial.steps({ game: () => (tut() ? S.game : null) }),
+      pauseIf: () => S.tab !== 'play' || !tut() || !!Play.rp || sheetOpen || (window.Profile && Profile.isOpen()),
+    });
+    if (tut() && S.game.phase !== 'over') Play.tour.resume(); // carry on after a reload
+    offerTutorial();
+  }
+  window.MonoApp = { get S() { return S; }, get G() { return G; }, Play, doAction, render, save, startTutorial, startDaily, undo, openRules }; // for tests / debugging
   let rt = null;
   window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { layout(); render(); }, 120); });
   // the trade tab's result block gets the same wrapper so typing cash doesn't redraw inputs

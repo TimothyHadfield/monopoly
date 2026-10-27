@@ -28,6 +28,13 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; font-size: 17px; }
 .brand svg { width: 24px; height: 24px; color: var(--text); }
 .ver { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* My stats (shared _profile kit): avatar + label at the right end of the header */
+.top .me-btn { flex: none; display: flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.top .me-btn[hidden] { display: none; }
+.top .me-btn { margin-left: auto; }
+.top .me-btn:not([hidden]) + .ver { margin-left: 0; }
+.top .me-btn svg { width: 26px; height: 26px; flex: none; }
+@media (max-width: 359px) { .top .me-btn span { display: none; } .top .me-btn { padding: 3px; } }
 .tabs-top { display: none; gap: 4px; }
 .tabs-top button { background: none; border: 0; padding: 8px 14px; border-radius: 9px; color: var(--muted); font-weight: 600; }
 .tabs-top button[aria-current="page"] { color: var(--text); background: var(--card); }
@@ -278,6 +285,8 @@ table.t tr.tap { cursor: pointer; }
 .mbar .plate { padding: 0 8px; border-radius: 4px; height: 26px; background: linear-gradient(#3b2a1a, #24180d); border: 1px solid #7a5a2e; }
 .mbar .plate.turn { border-color: var(--pc); box-shadow: 0 0 0 2px var(--pc); }
 .mbar .btn.small { background: rgba(20,22,30,.82); }
+/* 320px phones: Undo made the bar one button longer, so the buttons tighten instead of squeezing your name */
+@media (max-width: 359px) { .mbar { gap: 4px; } .mbar .btn.small { padding: 6px 7px; font-size: 13px; } .mbar .plate { flex: none; } }
 .playing .panel-col { display: none; }
 
 @media (min-width: 900px) {
@@ -377,3 +386,9 @@ table.t tr.tap { cursor: pointer; }
   .playing.land #app { grid-template-rows: 1fr auto; }
   .playing.land .top { display: none; }
 }
+
+/* ---------- end-of-game replay ---------- */
+.rpbar { width: 100%; max-width: 260px; margin: 8px auto 2px; display: block; accent-color: var(--accent-warm); }
+.rpctl { justify-content: center; gap: 6px; flex-wrap: nowrap; }
+.rpctl .btn { padding: 6px 10px; min-width: 40px; }
+.rpctl .btn svg { width: 16px; height: 16px; }

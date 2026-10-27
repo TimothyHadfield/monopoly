@@ -18,6 +18,7 @@
     shortGame: false,     // official short game: 2 deeds dealt, hotel at 3 houses, ends at 2nd bankruptcy
     roundLimit: 0,        // official time-limit game as a number of rounds (0 = play to the end)
     startCash: 1500,
+    noJailRent: false,    // house rule: an owner sitting in jail collects no rent
     manualDice: false,    // tests / 'real dice' mode: the roll action carries the dice
     maxTurns: 4000,       // safety stop; richest wins
   };
@@ -69,7 +70,8 @@
     return st;
   }
 
-  function log(st, text) { st.log.push(text); if (st.log.length > 80) st.log.splice(0, st.log.length - 80); }
+  // logN counts every line ever written (the log itself keeps the last 80), so a replay can tell which lines are new
+  function log(st, text) { st.log.push(text); st.logN = (st.logN || 0) + 1; if (st.log.length > 80) st.log.splice(0, st.log.length - 80); }
   const name = (st, i) => (i < 0 ? 'the bank' : st.players[i].name);
   const money = n => '$' + Math.round(n);
 
@@ -158,6 +160,7 @@
       return;
     }
     if (o.owner === i || o.mort) return;
+    if (st.rules.noJailRent && st.players[o.owner].jail) { log(st, `${name(st, o.owner)} is in jail: no rent.`); return; }
     let sum = diceSum;
     if (how === 'util10') { const a = die(st), b = die(st); sum = a + b; st.dice = [a, b]; log(st, `${p.name} rolls ${sum} for the utility.`); }
     const r = Money.rent(st, sq, how, sum);
