@@ -16,13 +16,16 @@
 
   const R = Math.random;
   // knobs for strength experiments (tools/sim.js); the shipped values are the defaults
-  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false, mortBuild: true, realTrade: true, realTheirs: 1.5, realMin: 0, realJudge: true, stuckRound: 40, medReserve: 200, medReal: true };
+  const cfg = { trade: true, reserve: 0.5, buyAll: false, maxHouses: 5, rounds: 10, swapSlack: 50, blockPremium: 0.25, hardEdge: 40, hardProposals: 1, hardRollTrade: false, mortBuild: true, realTrade: true, realTheirs: 1.5, realMin: 0, realJudge: true, stuckRound: 40, medReserve: 200, medReal: true, clock: true, clockBid: true, clockAuction: true, clockHardBuild: true };
   // medReal: Medium also weighs a trade by whether each side can pay for houses on its new set (as Hard does);
   // with medReserve 200 (was 300) this lifted Medium vs Easy one-on-one from 45% to 67% (1,000 games, 2026-10-27).
   const A = (action, why) => ({ action, why: why || '' });
 
   function unowned(st) { return st.own.filter((o, i) => SQ[i].group && o.owner < 0).length; }
   function oppHouses(st, me) { return st.own.some(o => o.owner >= 0 && o.owner !== me && o.houses > 0); }
+  // time-limit game: rounds left (0 = play to the end). Net worth decides, so lots count at face value,
+  // a trade only pays for the rounds that are left, and $50 jail fees / 10% mortgage interest are pure loss.
+  const clock = st => (st.rules && st.rules.roundLimit && cfg.clock ? Math.max(1, st.rules.roundLimit - st.round + 1) : 0);
   function jailStrategy(st, me) { return unowned(st) >= 6 && !oppHouses(st, me) ? 'pay' : 'stay'; }
 
   // biggest rent an opponent could charge me next turn, weighted down by its chance
@@ -121,7 +124,7 @@
   function judgeTrade(st, me, level) {
     const tr = st.trade;
     const t = { a: tr.from, b: tr.to, aGives: tr.give, bGives: tr.get, aCash: tr.giveCash, bCash: tr.getCash };
-    const ev = Money.evaluateTrade(st, t, { rounds: 10, strategy: 'stay' });
+    const ev = Money.evaluateTrade(st, t, { rounds: clock(st) ? Math.min(10, clock(st)) : 10, strategy: 'stay' });
     const mine = ev.b.value, theirs = ev.a.value;
     if (level === 'easy') {
       const gv = tr.give.reduce((s, i) => s + SQ[i].price, 0) + tr.giveCash;
@@ -177,7 +180,7 @@
           if (give.some(i => SQ[i].group === SQ[get[0]].group)) continue;
           const key = Engine.tradeKey({ from: me, to: them, give, get });
           if (recent.includes(key)) continue;
-          const ev = Money.evaluateTrade(st, { a: me, b: them, aGives: give, bGives: get, aCash: 0, bCash: 0 }, { rounds: cfg.rounds });
+          const ev = Money.evaluateTrade(st, { a: me, b: them, aGives: give, bGives: get, aCash: 0, bCash: 0 }, { rounds: clock(st) ? Math.min(cfg.rounds, clock(st)) : cfg.rounds });
           const a0 = ev.a.value, b0 = ev.b.value;
           if (a0 + b0 <= 0) continue;              // no gain to share
           // split the gain evenly, in steps of $10
@@ -219,6 +222,9 @@
     if (ph === 'buy') {
       const sq = st.pendingBuy, price = SQ[sq].price;
       if (!has('buy')) return A({ type: 'decline', seat: me }, 'Not enough cash.');
+      // time limit: a lot nobody else needs goes to auction, where it may sell under its face value (net worth decides)
+      if (level !== 'easy' && clock(st) && cfg.clockAuction && st.rules.auction && lotValue(st, me, sq) < price * 1.5)
+        return A({ type: 'decline', seat: me }, 'Time-limit game: let it go to auction and try to get it under its price.');
       let ok;
       if (level === 'easy') ok = R() < 0.65;
       else if (level === 'medium') ok = p.cash - price >= 50;
@@ -231,6 +237,7 @@
       const a = st.auction, sq = a.sq;
       let cap;
       if (level === 'easy') cap = SQ[sq].price * 0.6;
+      else if (clock(st) && cfg.clockBid) cap = Math.min(SQ[sq].price, p.cash - 10); // any lot under its face value adds to net worth
       else if (level === 'medium') cap = Math.min(SQ[sq].price, p.cash - 50);
       else cap = Math.min(lotValue(st, me, sq), p.cash - cushion(st, me) * 0.4);
       const step = a.high < 100 ? 10 : 20;
@@ -242,7 +249,7 @@
     if (ph === 'roll' || ph === 'end') {
       // jail choice at the start of the turn
       if (ph === 'roll' && p.jail) {
-        const strat = level === 'easy' ? (p.cash > 200 ? 'pay' : 'stay') : level === 'medium' ? (unowned(st) > 10 ? 'pay' : 'stay') : jailStrategy(st, me);
+        const strat = level === 'easy' ? (p.cash > 200 ? 'pay' : 'stay') : clock(st) ? 'stay' : level === 'medium' ? (unowned(st) > 10 ? 'pay' : 'stay') : jailStrategy(st, me);
         if (strat === 'pay') {
           if (has('useCard')) return A({ type: 'useCard', seat: me }, 'Lots still for sale: get out and buy.');
           if (has('payJail')) return A({ type: 'payJail', seat: me }, 'Lots still for sale: pay $50 and get moving.');
@@ -261,15 +268,18 @@
         const builds = Money.houseOptions(st, me, 'stay').filter(o => o.afford && leg.some(a => a.type === 'build' && a.sq === o.sq));
         if (level === 'hard') {
           // best payback first, prefer getting every set to 3 houses
+          // time limit, one-on-one: a house must pay for itself in the rounds left, else the cash wins more at auction
+          // (measured: 20 rounds, Hard vs Medium 52% -> 59%; with 3+ players it cost Hard, so it is off there)
+          const left = cfg.clockHardBuild && st.players.filter(q => !q.out).length === 2 ? clock(st) : 0; // payback is in rounds
           const pick = builds.filter(o => o.next <= 3).concat(builds.filter(o => o.next > 3))
-            .find(o => p.cash - o.cost >= reserve);
+            .find(o => p.cash - o.cost >= reserve && (!left || o.payback <= left));
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, `Build on ${SQ[pick.sq].name}: pays back in ${Math.max(1, Math.round(pick.payback))} rounds.`);
           // short of cash for a set's first 3 houses: mortgage loose lots to pay for them
           if (cfg.mortBuild) {
             const mb = mortgageToBuild(st, me, leg, reserve);
             if (mb) return mb;
           }
-          const um = !(cfg.mortBuild && wantsHouses(st, me)) && leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
+          const um = !clock(st) && !(cfg.mortBuild && wantsHouses(st, me)) && leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= reserve + 200);
           if (um) return A({ ...um, seat: me }, 'Spare cash: pay off a mortgage.');
 
         } else {
@@ -277,7 +287,7 @@
           const uneven = st.rules.evenBuild === false;
           const pick = builds.sort((a, b) => (uneven ? (st.own[a.sq].houses - st.own[b.sq].houses) : 0) || a.sq - b.sq).find(o => p.cash - o.cost >= reserve);
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, 'Build evenly.');
-          const um = leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= 600);
+          const um = !clock(st) && leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= 600);
           if (um) return A({ ...um, seat: me }, 'Pay off a mortgage.');
         }
       } else if (p.cash > 700) {
@@ -296,6 +306,6 @@
     try { return choose(st, me); } finally { st.players[me].level = saved; }
   }
 
-  const AI = { choose, hint, lotValue, cushion, findTrade, cfg };
+  const AI = { choose, hint, lotValue, cushion, findTrade, cfg, clock };
   if (node) module.exports = AI; else root.AI = AI;
 })(this);
