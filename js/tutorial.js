@@ -9,6 +9,14 @@
     return { seed: SEED, seats: [{ name: 'You', kind: 'human' }, { name: 'Ada', kind: 'cpu', level: 'easy' }], rules: {} };
   }
 
+  // checked 2026-10-28: each returns 200 from youtube.com/oembed with this title and channel
+  const VIDEOS = [
+    { id: '4nz-_hvFw44', title: 'How To Play Monopoly Correctly! - A Full Tutorial', by: 'Watch It Played', note: 'How to play: the full official rules, step by step.' },
+    { id: 'dvHqVyxdWYU', title: 'How to play Monopoly (2025 Rules)', by: 'Triple S Games', note: 'How to play: the rules in about five minutes.' },
+    { id: 'wK7xcWFgHoA', title: 'The right way to play Monopoly', by: 'Vox', note: 'Strategy: a world-championship player on the odds, houses and the real rules.' },
+    { id: 'AntpTSOyOYs', title: 'The Exact Math Behind the Jail Strategy in Monopoly', by: 'Almost Exact', note: 'Strategy: when to stay in jail (the same maths as the Odds tab).' },
+  ];
+
   function rules() {
     return {
       title: 'Monopoly rules',
@@ -25,7 +33,9 @@
         { id: 'cards', title: 'Chance and Community Chest', short: 'Cards', html: '<p>Land on one of these and take the top card of that deck, do what it says, and put it at the bottom. A Get Out of Jail Free card is kept until you use it (or sell it).</p>' },
         { id: 'money', title: 'Money trouble', short: 'Money', html: '<ul><li><b>Mortgage</b> a lot (no buildings in its set) to get half its price. Lifting it costs that plus 10%.</li><li>Short of cash: sell buildings, mortgage lots or trade until you can pay.</li><li>If you still can\'t pay, you are bankrupt: everything you have goes to the player you owe (or the bank, which auctions your lots).</li></ul>' },
         { id: 'trade', title: 'Trading', short: 'Trade', html: '<p>On your turn you may offer any other player a trade: lots, cash and Get Out of Jail Free cards, in any mix. A lot can\'t be traded while its colour set has buildings. Whoever receives a mortgaged lot pays the bank 10% interest at once.</p>' },
-        { id: 'options', title: 'Shorter games and house rules', short: 'Options', html: '<ul><li><b>Short game</b>: three free deeds each, a hotel after 3 houses, one try to roll out of jail, and the game ends at the first bankruptcy: the richest player wins.</li><li><b>Time limit</b>: two deeds each (paid for), then the richest player after the last round wins.</li><li><b>Auctions off</b>: an unbought lot just stays with the bank.</li><li>House rules: <b>Free Parking pot</b> (taxes and fees go to the middle; land on Free Parking to take them), <b>$400 on Go</b> for landing exactly on it, <b>no rent in jail</b>, <b>starting cash</b>, and the older <b>pre-2008 taxes</b>.</li></ul>' },
+        { id: 'options', title: 'Shorter games and house rules', short: 'Options', html: '<ul><li><b>Short game</b>: three free deeds each, a hotel after 3 houses, one try to roll out of jail, and the game ends at the first bankruptcy: the richest player wins.</li><li><b>Time limit</b>: two deeds each (paid for), then the richest player after the last round wins.</li><li><b>Auctions off</b>: an unbought lot just stays with the bank.</li><li>House rules (not in the rulebook, but common at home): <b>Free Parking pot</b> (taxes and fees go to the middle; land on Free Parking to take them, optionally with $500 from the bank to start), <b>$400 on Go</b> for landing exactly on it, <b>pass Go before buying</b>, <b>build in any order</b> (no even building), <b>no rent in jail</b>, <b>starting cash</b>, and the older <b>pre-2008 taxes</b>.</li></ul>' },
+        { id: 'videos', title: 'Videos', short: 'Videos', html: '<p>Watch the real game being played and explained (opens YouTube):</p><ul class="vids">'
+          + VIDEOS.map(v => `<li><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">${v.title}</a> · ${v.by}<br><span class="vnote">${v.note}</span></li>`).join('') + '</ul>' },
       ],
     };
   }

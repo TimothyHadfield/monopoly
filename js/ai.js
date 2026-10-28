@@ -273,7 +273,9 @@
           if (um) return A({ ...um, seat: me }, 'Spare cash: pay off a mortgage.');
 
         } else {
-          const pick = builds.sort((a, b) => a.sq - b.sq).find(o => p.cash - o.cost >= reserve);
+          // even building off (house rule): Medium still spreads houses across the set by choice
+          const uneven = st.rules.evenBuild === false;
+          const pick = builds.sort((a, b) => (uneven ? (st.own[a.sq].houses - st.own[b.sq].houses) : 0) || a.sq - b.sq).find(o => p.cash - o.cost >= reserve);
           if (pick) return A({ type: 'build', seat: me, sq: pick.sq }, 'Build evenly.');
           const um = leg.find(a => a.type === 'unmortgage' && p.cash - Engine.unmortgageCost(a.sq) >= 600);
           if (um) return A({ ...um, seat: me }, 'Pay off a mortgage.');

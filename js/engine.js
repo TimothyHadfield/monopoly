@@ -15,13 +15,26 @@
     incomeTax10: false,   // older rule: pay 10% of worth or $200, whichever is lower
     luxuryTax: 100,       // $100 now, $75 in older sets
     goAroundFirst: false, // house rule: no buying until you have passed Go once
-    shortGame: false,     // official short game: 2 deeds dealt, hotel at 3 houses, ends at 2nd bankruptcy
+    shortGame: false,     // official short game (2008+): 3 deeds dealt, hotel at 3 houses, ends at the 1st bankruptcy
     roundLimit: 0,        // official time-limit game as a number of rounds (0 = play to the end)
     startCash: 1500,
     noJailRent: false,    // house rule: an owner sitting in jail collects no rent
+    evenBuild: true,      // official: build and sell evenly across a set (false = house rule: any order)
+    parkingSeed: 0,       // house rule with freeParking: the bank puts this much in the pot at the start and after each win
     manualDice: false,    // tests / 'real dice' mode: the roll action carries the dice
     maxTurns: 4000,       // safety stop; richest wins
   };
+
+  // the Play tab's setup switches -> engine rules (local games and online rooms use the same map)
+  function fromSetup(r) {
+    r = r || {};
+    return {
+      auction: r.auction !== false, freeParking: !!r.freeParking, parkingSeed: r.freeParking ? (+r.parkingSeed || 0) : 0,
+      doubleGo: !!r.doubleGo, goAroundFirst: !!r.goAroundFirst, evenBuild: r.evenBuild !== false,
+      shortGame: !!r.shortGame, roundLimit: +r.roundLimit || 0,
+      incomeTax10: !!r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100, startCash: +r.startCash || 1500, noJailRent: !!r.noJailRent,
+    };
+  }
 
   // ---------------------------------------------------------------- random
   function rand(st) { // mulberry32, state kept in st.seed
@@ -52,6 +65,7 @@
       pot: 0, dice: null, lastMove: null, lastCard: null, log: [], winner: -1, bankruptcies: 0,
     };
     st.players.forEach(p => { p.cash = st.rules.startCash; });
+    if (st.rules.freeParking) st.pot = st.rules.parkingSeed || 0;
     st.decks.chance = shuffle(st, CHANCE.map((_, i) => i));
     st.decks.chest = shuffle(st, CHEST.map((_, i) => i));
     if (st.rules.shortGame || st.rules.roundLimit) {
@@ -142,7 +156,7 @@
       return charge(st, i, amt, -1, s.name === 'Income Tax' ? 'income tax' : 'luxury tax');
     }
     if (s.type === 'free') {
-      if (st.rules.freeParking && st.pot > 0) { p.cash += st.pot; log(st, `${p.name} wins the Free Parking pot: ${money(st.pot)}.`); st.pot = 0; }
+      if (st.rules.freeParking && st.pot > 0) { p.cash += st.pot; log(st, `${p.name} wins the Free Parking pot: ${money(st.pot)}.`); st.pot = st.rules.parkingSeed || 0; }
       return;
     }
     if (s.type === 'chance' || s.type === 'cc') {
@@ -550,6 +564,6 @@
     return v;
   }
 
-  const Engine = { offersLeft, tradeKey, canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
+  const Engine = { fromSetup, offersLeft, tradeKey, canGiveUp, DEFAULT_RULES, newGame, apply, view, legal, actor, settle, unmortgageCost, canMortgage };
   if (node) module.exports = Engine; else root.Engine = Engine;
 })(this);

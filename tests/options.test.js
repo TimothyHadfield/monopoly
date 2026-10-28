@@ -56,3 +56,74 @@ test('My stats: Hint/Undo makes a game "with help" (unrated); pass-and-play is n
   assert.strictEqual(P.result(pp, 0, {}).mode, 'friends');
   assert.strictEqual(P.LEVELS.find(l => l.id === 'hard').rating > P.LEVELS.find(l => l.id === 'medium').rating, true);
 });
+
+// ---- wave 3 house rules (2026-10-28): every option the Play setup offers reaches the engine
+test('Setup switches map onto engine rules (pass Go first, even building off, Free Parking $500 seed)', () => {
+  assert.strictEqual(typeof E.fromSetup, 'function', 'Engine.fromSetup missing');
+  const r = E.fromSetup({ auction: false, freeParking: true, parkingSeed: 500, doubleGo: true, goAroundFirst: true, evenBuild: false, oldTaxes: true, startCash: 2000, noJailRent: true, shortGame: false, roundLimit: 20 });
+  assert.deepStrictEqual(
+    [r.auction, r.freeParking, r.parkingSeed, r.doubleGo, r.goAroundFirst, r.evenBuild, r.incomeTax10, r.luxuryTax, r.startCash, r.noJailRent, r.roundLimit],
+    [false, true, 500, true, true, false, true, 75, 2000, true, 20]);
+  const d = E.fromSetup({});
+  assert.deepStrictEqual([d.auction, d.freeParking, d.parkingSeed, d.goAroundFirst, d.evenBuild, d.startCash], [true, false, 0, false, true, 1500], 'base rules stay the default');
+});
+
+test('Even building off: a second house may go on one street of a set; the default refuses', () => {
+  const $ = require('../js/money.js');
+  const table = rules => { const st = E.newGame(two(), rules, 1); st.own[1].owner = 0; st.own[3].owner = 0; st.own[1].houses = 1; return st; };
+  assert.strictEqual($.canBuild(table({}), 0, 1), false, 'official rule: build evenly');
+  const off = table({ evenBuild: false });
+  assert.strictEqual($.canBuild(off, 0, 1), true);
+  off.own[3].houses = 0; off.own[1].houses = 2;
+  assert.strictEqual($.canSell(off, 0, 1), true, 'selling need not be even either');
+  // a hotel still needs four houses on that street
+  off.own[1].houses = 3; assert.strictEqual($.canBuild(off, 0, 1), true);
+  let st = E.newGame(two(), { evenBuild: false, manualDice: true }, 1);
+  st.own[1].owner = 0; st.own[3].owner = 0; st.phase = 'end'; st.resume = 'end';
+  st = E.apply(st, { seat: 0, type: 'build', sq: 1 }); st = E.apply(st, { seat: 0, type: 'build', sq: 1 });
+  assert.deepStrictEqual([st.own[1].houses, st.own[3].houses], [2, 0]);
+});
+
+test('Free Parking $500 seed: the pot starts at $500 and is refilled after someone takes it', () => {
+  let st = E.newGame(two(), { freeParking: true, parkingSeed: 500, manualDice: true }, 1);
+  assert.strictEqual(st.pot, 500);
+  st.players[0].pos = 15; // Pennsylvania RR, 5 to Free Parking
+  const before = st.players[0].cash;
+  st = E.apply(st, { seat: 0, type: 'roll', dice: [2, 3] });
+  assert.strictEqual(st.players[0].pos, 20);
+  assert.strictEqual(st.players[0].cash, before + 500);
+  assert.strictEqual(st.pot, 500, 'seed put back');
+  assert.strictEqual(E.newGame(two(), { freeParking: true }, 1).pot, 0, 'no seed unless asked');
+  assert.strictEqual(E.newGame(two(), { parkingSeed: 500 }, 1).pot, 0, 'seed needs the pot rule');
+});
+
+test('Pass Go first: no buying (and no auction) until a player has passed Go once', () => {
+  let st = E.newGame(two(), { goAroundFirst: true, manualDice: true }, 3);
+  st = E.apply(st, { seat: 0, type: 'roll', dice: [2, 4] });
+  assert.strictEqual(st.players[0].pos, 6);
+  assert.notStrictEqual(st.phase, 'buy'); assert.notStrictEqual(st.phase, 'auction');
+  assert.strictEqual(st.own[6].owner, -1);
+  st.players[1].passedGo = true; st.turn = 1; st.phase = 'roll'; st.resume = 'roll';
+  st = E.apply(st, { seat: 1, type: 'roll', dice: [2, 4] });
+  assert.strictEqual(st.phase, 'buy');
+});
+
+test('Computers finish games under every house rule (none hits the safety stop)', () => {
+  const { playGame } = require('../tools/sim.js');
+  const rules = [{ freeParking: true, parkingSeed: 500 }, { doubleGo: true }, { auction: false }, { goAroundFirst: true }, { evenBuild: false }, { noJailRent: true }];
+  for (const r of rules) {
+    for (let g = 0; g < 6; g++) {
+      const st = playGame(['hard', 'medium', 'easy', 'medium'], r, 9100 + g);
+      assert.ok(st.turns < E.DEFAULT_RULES.maxTurns, JSON.stringify(r) + ' stalled');
+    }
+  }
+});
+
+test('Rules sheet has a Videos section: 2-5 YouTube links that open in a new tab', () => {
+  require('../js/tutorial.js');
+  const sec = globalThis.MonoTutorial.rules().sections.find(s => s.id === 'videos');
+  assert.ok(sec, 'no Videos section');
+  const links = sec.html.match(/<a [^>]*>/g) || [];
+  assert.ok(links.length >= 2 && links.length <= 5, links.length + ' links');
+  links.forEach(a => assert.match(a, /href="https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}" target="_blank" rel="noopener"/));
+});

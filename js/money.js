@@ -92,6 +92,9 @@
   // houses as an even-building level (a hotel counts one above hotelAt)
   const lvl = (state, h) => (h === 5 ? hotelAt(state) + 1 : h);
 
+  // house rule "even building off": any street of a full set, in any order
+  const evenOn = state => !(state.rules && state.rules.evenBuild === false);
+
   // Can player p add one building to sq right now (rules: whole group owned,
   // nothing in the group mortgaged, build evenly, bank has the pieces)?
   function canBuild(state, p, sq) {
@@ -99,7 +102,7 @@
     if (s.type !== 'prop' || o.owner !== p || o.houses >= 5) return false;
     const g = GROUPS[s.group];
     if (!ownsGroup(state, p, s.group) || g.some(i => state.own[i].mort)) return false;
-    if (g.some(i => lvl(state, state.own[i].houses) < lvl(state, o.houses))) return false;
+    if (evenOn(state) && g.some(i => lvl(state, state.own[i].houses) < lvl(state, o.houses))) return false;
     const bank = housesInUse(state);
     if (nextLevel(state, o.houses) === 5) return bank.hotelsLeft > 0;
     return bank.housesLeft > 0;
@@ -107,7 +110,7 @@
   function canSell(state, p, sq) {
     const s = SQ[sq], o = state.own[sq];
     if (s.type !== 'prop' || o.owner !== p || o.houses <= 0) return false;
-    if (GROUPS[s.group].some(i => lvl(state, state.own[i].houses) > lvl(state, o.houses))) return false;
+    if (evenOn(state) && GROUPS[s.group].some(i => lvl(state, state.own[i].houses) > lvl(state, o.houses))) return false;
     if (o.houses === 5 && housesInUse(state).housesLeft < hotelAt(state)) return false;
     return true;
   }

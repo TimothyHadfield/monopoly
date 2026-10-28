@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.10 · 2026-10-27';
+  const VERSION = 'v1.11 · 2026-10-28';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -23,7 +23,7 @@
       trade: { a: 0, b: 1, aGives: [], bGives: [], aCash: 0, bCash: 0 },
       setup: {
         seats: [{ name: 'You', kind: 'human' }, { name: 'Ada', kind: 'cpu', level: 'hard' }, { name: 'Bo', kind: 'cpu', level: 'medium' }, { name: 'Cy', kind: 'cpu', level: 'easy' }],
-        rules: { auction: true, freeParking: false, doubleGo: false, shortGame: false, roundLimit: 0, oldTaxes: false, startCash: 1500, noJailRent: false },
+        rules: { auction: true, freeParking: false, parkingSeed: 0, doubleGo: false, goAroundFirst: false, evenBuild: true, shortGame: false, roundLimit: 0, oldTaxes: false, startCash: 1500, noJailRent: false },
       },
       game: null,
     };
@@ -618,7 +618,7 @@
     try { Profile.recordResult(m.daily ? Object.assign(r, { date: m.daily }) : r); } catch (e) { /* stats never break the game */ }
     toast((m.daily ? 'Daily game' : 'Game') + ' left: counted as a loss');
   }
-  const rulesFrom = r => ({ auction: r.auction, freeParking: r.freeParking, doubleGo: r.doubleGo, shortGame: r.shortGame, roundLimit: r.roundLimit, incomeTax10: r.oldTaxes, luxuryTax: r.oldTaxes ? 75 : 100, startCash: r.startCash || 1500, noJailRent: !!r.noJailRent });
+  const rulesFrom = r => Engine.fromSetup(r);
   // a new local game; opts: { seed, tutorial, daily: 'YYYY-MM-DD' }
   function startGame(seats, rules, opts) {
     opts = opts || {};
@@ -819,6 +819,8 @@
       if (!G) return { own: Money.newOwn(), colors: [] , tokens: [] };
       return {
         own: G.own, colors: G.players.map((p, k) => COLORS[k]),
+        // Free Parking pot house rule: the pot sits printed on the corner
+        values: G.rules.freeParking && G.pot > 0 ? Object.assign([], { 20: shortMoney(G.pot) }) : null,
         selected: G.phase === 'buy' ? G.pendingBuy : G.phase === 'auction' ? G.auction.sq : null,
         tokens: G.players.map((p, k) => ({ id: 'g' + k, pos: p.pos, color: COLORS[k], jail: p.jail > 0, turn: k === G.turn, out: p.out })),
       };
@@ -983,7 +985,9 @@
     },
     setupPanel() {
       const su = S.setup, r = su.rules;
-      const sw = (k, label, hk) => `<div class="line"><span class="lbl">${label}${hk ? help(hk) : ''}</span><label class="switch"><input type="checkbox" data-act="rule" data-k="${k}" ${r[k] ? 'checked' : ''}><span></span></label></div>`;
+      // each rule: a switch plus one line saying what it does
+      const note = t => `<span class="note">${t}</span>`;
+      const sw = (k, label, txt, on) => `<div class="line"><span class="lbl">${label}${note(txt)}</span><label class="switch"><input type="checkbox" data-act="rule" data-k="${k}" ${(on != null ? on : r[k]) ? 'checked' : ''}><span></span></label></div>`;
       let h = `<div class="ph"><h2>Seats</h2><span class="grow"></span><button class="btn small" data-act="addseat" ${su.seats.length >= 8 ? 'disabled' : ''}>+ Seat</button></div><div class="list">`;
       su.seats.forEach((s, k) => {
         h += `<div class="rowi"><span class="dot" style="background:${COLORS[k]}"></span><input class="num" style="width:96px;text-align:left" data-act="sname" data-k="${k}" value="${esc(s.name)}" maxlength="12" aria-label="Name">
@@ -996,15 +1000,18 @@
         <div class="line"><span class="lbl">Other Person seats open for friends</span><button class="btn small" data-act="netcreate" ${netBusy ? 'disabled' : ''}>Create room</button></div>
         <div class="line"><input class="num" style="width:110px;text-align:left;text-transform:uppercase" data-act="netcode" value="${esc(S.netCode || '')}" maxlength="5" placeholder="Code" aria-label="Room code" autocapitalize="characters" autocomplete="off"><span style="flex:1"></span><button class="btn small" data-act="netjoin" ${netBusy ? 'disabled' : ''}>Join</button></div>
         <div class="sec">Rules</div>
-        ${sw('auction', 'Auctions')}
-        ${sw('shortGame', 'Short game')}
-        <div class="line"><span class="lbl">Time limit</span><div class="seg">${[0, 20, 40].map(n => `<button data-act="rlimit" data-v="${n}" aria-pressed="${r.roundLimit === n}">${n ? n + ' rounds' : 'Off'}</button>`).join('')}</div></div>
+        ${sw('auction', 'Auctions', 'Off: a lot nobody buys stays with the bank.')}
+        ${sw('shortGame', 'Short game', '3 free deeds, hotel at 3 houses, ends at the first bankruptcy.')}
+        <div class="line"><span class="lbl">Time limit${note('Richest player after the last round wins.')}</span><div class="seg">${[0, 20, 40].map(n => `<button data-act="rlimit" data-v="${n}" aria-pressed="${r.roundLimit === n}">${n ? n + ' rounds' : 'Off'}</button>`).join('')}</div></div>
         <div class="sec">House rules</div>
-        ${sw('freeParking', 'Free Parking pot')}
-        ${sw('doubleGo', '$400 on Go')}
-        ${sw('noJailRent', 'No rent in jail')}
+        ${sw('freeParking', 'Free Parking pot', 'Taxes and fees go to the middle; land on Free Parking to take them.')}
+        ${r.freeParking ? `<div class="line"><span class="lbl">Pot seed${note('The bank puts this in at the start and after each win.')}</span><div class="seg">${[0, 500].map(n => `<button data-act="rseed" data-v="${n}" aria-pressed="${(r.parkingSeed || 0) === n}">$${n}</button>`).join('')}</div></div>` : ''}
+        ${sw('doubleGo', '$400 on Go', 'Land exactly on Go: collect $400, not $200.')}
+        ${sw('goAroundFirst', 'Pass Go before buying', 'Nobody may buy a lot until they have passed Go once.')}
+        ${sw('unevenBuild', 'Build in any order', 'Houses need not be spread evenly across a colour set.', r.evenBuild === false)}
+        ${sw('noJailRent', 'No rent in jail', 'An owner sitting in jail collects no rent.')}
         <div class="line"><span class="lbl">Starting cash</span><div class="seg">${[1000, 1500, 2000].map(n => `<button data-act="rcash" data-v="${n}" aria-pressed="${(r.startCash || 1500) === n}">$${n.toLocaleString('en-US')}</button>`).join('')}</div></div>
-        ${sw('oldTaxes', 'Pre-2008 taxes')}
+        ${sw('oldTaxes', 'Pre-2008 taxes', 'Income Tax $200 or 10% of your worth; Luxury Tax $75.')}
         <div class="row" style="display:flex;margin-top:14px"><button class="btn warm" style="flex:1" data-act="start">Start game</button></div>`;
       return h;
     },
@@ -1123,7 +1130,8 @@
         case 'delseat': su.seats.splice(+d.k, 1); break;
         case 'skind': su.seats[+d.k].kind = d.v; if (d.v === 'cpu' && !su.seats[+d.k].level) su.seats[+d.k].level = 'medium'; break;
         case 'slevel': su.seats[+d.k].level = d.v; break;
-        case 'rule': su.rules[d.k] = e.target.checked; break;
+        case 'rule': if (d.k === 'unevenBuild') su.rules.evenBuild = !e.target.checked; else su.rules[d.k] = e.target.checked; break;
+        case 'rseed': su.rules.parkingSeed = +d.v; break;
         case 'rlimit': su.rules.roundLimit = +d.v; break;
         case 'manage': Play.manageSheet(); return;
         case 'logsheet': openSheet(Play.logSheet(), 'log'); return;
