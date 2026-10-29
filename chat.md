@@ -58,3 +58,5 @@
 - **Verified:** 4 new tests failed on v1.10, then `npm test` 70 + quit browser test pass, pwa-check 18/18; WebKit screenshots 393/320/659×393/1280/1440 (setup with seed row, game with "$500" on the corner, Videos tab): 0 page errors, no sideways scroll. Ladder per rule: progress.md "Measured strength".
 - **Ladder:** every house rule holds Hard ≥ Medium ≥ Easy (300 games each); the existing Time limit did not (Easy beat Medium 65%), fixed with time-limit play (`AI.clock`): Medium 85% vs Easy, Hard 61% vs Medium at 20 rounds.
 - **Open:** online room with the new rules not played (same rules object as local games).
+
+## 2026-10-28 — kit sweep (builder b1): `_coach` 1.2.0 ("New to Monopoly?" offer `place:'auto'`, avoids Start game), `_pwa` 1.4.0 build 18, v1.12; offer 0 px over tabs/Start at 393×659, 320×568, 659×393; settings 320 no sideways scroll; npm test 71/71, pwa-check 18/18 WebKit; live 30629be.
