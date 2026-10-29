@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const { SQ, GROUPS, GROUP_COLOR, GROUP_NAME } = Board;
-  const VERSION = 'v1.11 · 2026-10-28';
+  const VERSION = 'v1.12 · 2026-10-28';
   const KEY = 'monopoly:v1';
   const COLORS = ['#6ea8fe', '#f0b354', '#6ee7a8', '#f08c8c', '#c79bff', '#5fd4d4', '#f4f1ea', '#ff9f5a'];
 
@@ -668,7 +668,7 @@
   function offerTutorial() {
     if (!window.COACH || !Play.tour || S.tab !== 'play' || S.game || NET || NETS || netResuming || sheetOpen) return;
     if (Play.tour.seen() || COACH.offered('mono-first')) return;
-    COACH.offer({ id: 'mono-first', title: 'New to Monopoly?', text: 'Play a guided first game against one easy computer.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial() });
+    COACH.offer({ id: 'mono-first', title: 'New to Monopoly?', text: 'Play a guided first game against one easy computer.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial(), place: 'auto', avoid: ['[data-act="start"]'] });
   }
   function openRules(open) { if (window.COACH && window.MonoTutorial) { closeSheet(); COACH.rules(Object.assign(MonoTutorial.rules(), { open })); } }
   function undo() {
